@@ -33,4 +33,36 @@ public class InstructorApplyRepository {
             return null;
         }
     }
+
+    /** 사용자의 실명(uname)을 조회한다. 없으면 null. */
+    public String findUnameByUserId(int userId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT uname FROM users WHERE user_id = ?",
+                    String.class, userId);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
+    /**
+     * instructors 에 신청 행을 추가한다.
+     * iname 은 신청 시점엔 실명(uname)으로 채운다. approved_at 은 NULL(대기).
+     */
+    public void insertApplication(int userId, String iname, String bio, String field,
+                                  String careerFile, String fileName) {
+        jdbcTemplate.update(
+                "INSERT INTO instructors " +
+                        "(user_id, iname, bio, field, career_file, file_name, applied_at, approved_at) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP, NULL)",
+                userId, iname, bio, field, careerFile, fileName);
+    }
+
+    /** 사용자의 auth 를 바꾼다. (신청 시 4=신청 대기로) */
+    public void updateAuth(int userId, int auth) {
+        jdbcTemplate.update(
+                "UPDATE users SET auth = ? WHERE user_id = ?",
+                auth, userId);
+    }
+
 }
