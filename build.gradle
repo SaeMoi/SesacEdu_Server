@@ -20,11 +20,20 @@ dependencies {
     providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 
     // Swagger (Boot 2.7 용)
     implementation 'org.springdoc:springdoc-openapi-ui:1.7.0'
+
+    // ↓ 추가: JDBC(JdbcTemplate) + Oracle 드라이버
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+tasks.named('bootRun') {
+    jvmArgs = ['-Dfile.encoding=UTF-8']
 }
