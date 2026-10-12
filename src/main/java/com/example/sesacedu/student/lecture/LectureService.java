@@ -68,8 +68,8 @@ public class LectureService {
         // 공백만 보낸 값은 "필터를 걸지 않음"으로 본다. 그대로 두면 이름이 공백인
         // 강의를 찾는 조건이 되어 결과가 늘 0건이 된다.
         String resolvedKeyword = blankToNull(keyword);
-        String resolvedCategory = blankToNull(category);
-        String resolvedLevel = blankToNull(level);
+        String resolvedCategory = filterValue(category);
+        String resolvedLevel = filterValue(level);
 
         // 4단계 — 전체 건수를 먼저 센다. 프론트가 페이지 버튼을 몇 개 그릴지 알아야 한다.
         int total = lectureRepository.countOpenLectures(resolvedKeyword, resolvedCategory, resolvedLevel);
@@ -198,19 +198,37 @@ public class LectureService {
     private String toOrderBy(String sort) {
         switch (sort) {
             case "lid_desc":
-            case "id_desc": // 노션 기본값 표기의 별칭
+            case "id_desc":  // 노션 기본값 표기의 별칭
+            case "default":  // 프론트 /courses 의 "기본순"
                 return "l.Lid DESC";
             case "latest": // 기존 코드 호출 호환
                 return "l.created DESC NULLS LAST, l.Lid DESC";
             case "price_asc":
+            case "low":      // 프론트 /courses 의 "낮은 가격순"
                 return "l.Lprice ASC, l.Lid DESC";
             case "price_desc":
             case "pric_desc": // 노션에 기재된 오탈자도 허용
+            case "high":      // 프론트 /courses 의 "높은 가격순"
                 return "l.Lprice DESC, l.Lid DESC";
             // 목록에 없는 값은 전부 여기로 떨어진다. 이게 화이트리스트의 핵심이다.
             default:
                 throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_SORT", "정렬 조건이 올바르지 않습니다.");
         }
+    }
+
+    /**
+     * 분류·난이도 필터 값을 정리한다.
+     *
+     * 화면의 "전체" 선택지가 `all` 이라는 값을 보낸다. 그대로 조건에 넣으면
+     * 난이도가 "all" 인 강의를 찾게 되어 결과가 늘 0건이 된다. 값이 아니라
+     * "필터 없음" 이라는 신호이므로 null 로 바꾼다.
+     *
+     * 검색어(keyword)에는 적용하지 않는다. "all" 이라는 단어를 검색하려는 사람이
+     * 있을 수 있고, 그건 실제 검색어다.
+     */
+    private String filterValue(String value) {
+        String trimmed = blankToNull(value);
+        return "all".equalsIgnoreCase(trimmed) ? null : trimmed;
     }
 
     private String blankToNull(String value) {

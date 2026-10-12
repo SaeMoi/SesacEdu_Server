@@ -163,4 +163,52 @@ class LectureServiceTest {
                 "웹 보안", "입문", "/media/lectures/12/thumb.png", "/media/lectures/12/preview.mp4",
                 49000, "예시 강사", "실습으로 배우는 웹 보안", "정보보안 / 웹 보안", "에듀랩 보안 강사")));
     }
+
+    // ───────── 프론트 /courses 화면과 맞춘 값 (2026-10-13 트러블슈팅) ─────────
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "default, l.Lid DESC",
+            "low,     'l.Lprice ASC, l.Lid DESC'",
+            "high,    'l.Lprice DESC, l.Lid DESC'"
+    })
+    void 프론트_정렬값도_받는다(String sort, String expectedOrderBy) {
+        when(lectureRepository.countOpenLectures(null, null, null)).thenReturn(1);
+        when(lectureRepository.findOpenLectures(null, null, null, expectedOrderBy, 0, 12))
+                .thenReturn(java.util.List.of());
+
+        lectureService.list(null, null, null, sort, null, null);
+
+        verify(lectureRepository).findOpenLectures(null, null, null, expectedOrderBy, 0, 12);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"all", "ALL"})
+    void 난이도_all은_필터없음으로_바뀐다(String level) {
+        when(lectureRepository.countOpenLectures(null, null, null)).thenReturn(0);
+
+        lectureService.list(null, null, level, null, null, null);
+
+        // "all" 을 값으로 넘기면 난이도가 all 인 강의를 찾아 0건이 된다.
+        verify(lectureRepository).countOpenLectures(null, null, null);
+    }
+
+    @org.junit.jupiter.api.Test
+    void 분류_all도_필터없음이다() {
+        when(lectureRepository.countOpenLectures(null, null, null)).thenReturn(0);
+
+        lectureService.list(null, "all", null, null, null, null);
+
+        verify(lectureRepository).countOpenLectures(null, null, null);
+    }
+
+    @org.junit.jupiter.api.Test
+    void 검색어_all은_그대로_검색한다() {
+        when(lectureRepository.countOpenLectures("all", null, null)).thenReturn(0);
+
+        lectureService.list("all", null, null, null, null, null);
+
+        // 검색어는 사람이 입력한 값이다. all 이라는 단어를 찾는 것일 수 있다.
+        verify(lectureRepository).countOpenLectures("all", null, null);
+    }
 }
