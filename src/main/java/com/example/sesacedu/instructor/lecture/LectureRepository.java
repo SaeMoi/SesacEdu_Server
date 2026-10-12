@@ -15,8 +15,9 @@ import java.util.List;
 
 /**
  * 강의 관리 JDBC.
- * lectures 테이블. 소개 컬럼은 intro(추가), 난이도는 level_(예약어 회피), 가격은 lprice.
+ * lectures 테이블. 소개 컬럼은 intro, 난이도는 level_(예약어 회피), 가격은 lprice.
  * 수강생 수는 enrollments 를 COUNT 해서 구한다.
+ * instructorUserId 는 JWT 에서 온 값이라 long 으로 받는다(바인딩이라 타입만 맞으면 됨).
  */
 @Repository
 public class LectureRepository {
@@ -36,11 +37,7 @@ public class LectureRepository {
                     rs.getString("status"),
                     rs.getInt("student_count"));
 
-    /**
-     * 강사 본인 강의 목록. status 필터(open/closed/draft) 선택, null 이면 전체.
-     * 수강생 수는 enrollments 서브쿼리 COUNT.
-     */
-    public List<LectureListItem> findList(int instructorUserId, String status) {
+    public List<LectureListItem> findList(long instructorUserId, String status) {
         StringBuilder sql = new StringBuilder(
                 "SELECT l.lid, l.name, l.status, " +
                         "       (SELECT COUNT(*) FROM enrollments e WHERE e.lid = l.lid) AS student_count " +
@@ -72,8 +69,7 @@ public class LectureRepository {
         return d;
     };
 
-    /** 강의 상세 1건. 본인(instructorUserId) 강의만. 없거나 남의 것이면 null. */
-    public LectureDetail findDetail(int lid, int instructorUserId) {
+    public LectureDetail findDetail(int lid, long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT lid, name, category, level_, intro, lprice, status, " +
@@ -87,8 +83,7 @@ public class LectureRepository {
 
     // ---------------- 소유권 확인 ----------------
 
-    /** 이 강의(lid)가 해당 강사 소유인지. */
-    public boolean isOwnedByInstructor(int lid, int instructorUserId) {
+    public boolean isOwnedByInstructor(int lid, long instructorUserId) {
         Integer cnt = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM lectures WHERE lid = ? AND user_id = ?",
                 Integer.class, lid, instructorUserId);
@@ -106,18 +101,14 @@ public class LectureRepository {
 
     // ---------------- 등록 ----------------
 
-    /**
-     * 강의 등록. 기본 정보만 저장(파일 컬럼은 비움). 생성된 lid 를 반환한다.
-     * @param status draft/open/closed
-     */
-    public int insert(int instructorUserId, LectureSaveRequest req, String status) {
+    public int insert(long instructorUserId, LectureSaveRequest req, String status) {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
                     "INSERT INTO lectures (user_id, name, category, level_, intro, lprice, status, created) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, SYSTIMESTAMP)",
-                    new String[]{"lid"});   // Oracle: 생성된 lid 반환
-            ps.setInt(1, instructorUserId);
+                    new String[]{"lid"});
+            ps.setLong(1, instructorUserId);
             ps.setString(2, req.getName());
             ps.setString(3, req.getCategory());
             ps.setString(4, req.getLevel());
@@ -132,7 +123,6 @@ public class LectureRepository {
 
     // ---------------- 수정 ----------------
 
-    /** 강의 기본 정보 수정 (파일 제외). 수정된 행 수. */
     public int updateBasic(int lid, LectureSaveRequest req, String status) {
         return jdbcTemplate.update(
                 "UPDATE lectures SET name = ?, category = ?, level_ = ?, intro = ?, " +
@@ -143,17 +133,14 @@ public class LectureRepository {
 
     // ---------------- 파일 경로 갱신 (업로드 API 용) ----------------
 
-    /** 영상(mp4) 경로 갱신. */
     public void updateVideo(int lid, String path) {
         jdbcTemplate.update("UPDATE lectures SET video = ? WHERE lid = ?", path, lid);
     }
 
-    /** 자료(pdf/zip) 경로 갱신. */
     public void updateMaterial(int lid, String path) {
         jdbcTemplate.update("UPDATE lectures SET material = ? WHERE lid = ?", path, lid);
     }
 
-    /** 썸네일(이미지) 경로 갱신. */
     public void updatePicture(int lid, String path) {
         jdbcTemplate.update("UPDATE lectures SET picture = ? WHERE lid = ?", path, lid);
     }

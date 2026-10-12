@@ -17,7 +17,7 @@ import java.util.Set;
  *   - 등록(기본정보 + 썸네일 → draft) / 수정(기본정보 + 썸네일)
  *   - 자료 업로드 (영상·자료 슬롯 2개)
  * 공개 가드: status=open 은 영상·자료가 모두 있어야 통과.
- * 권한: 본인 강의만 조회·수정 가능.
+ * 권한: 본인 강의만 조회·수정 가능. instructorUserId 는 컨트롤러가 JWT 에서 추출해 넘긴다.
  */
 @Service
 public class LectureService {
@@ -38,12 +38,12 @@ public class LectureService {
     }
 
     /** 목록 */
-    public List<LectureListItem> getList(int instructorUserId, String status) {
+    public List<LectureListItem> getList(long instructorUserId, String status) {
         return lectureRepository.findList(instructorUserId, status);
     }
 
     /** 상세. 없거나 남의 강의면 예외. */
-    public LectureDetail getDetail(int lid, int instructorUserId) {
+    public LectureDetail getDetail(int lid, long instructorUserId) {
         LectureDetail d = lectureRepository.findDetail(lid, instructorUserId);
         if (d == null) {
             throw new NotFoundOrForbidden();
@@ -56,9 +56,8 @@ public class LectureService {
      * status 를 안 주면 draft. 새 강의는 영상·자료가 아직 없으므로 open 은 공개 가드에 걸린다.
      * @return 생성된 lid
      */
-    public int create(int instructorUserId, LectureSaveRequest req, MultipartFile thumbnail) {
+    public int create(long instructorUserId, LectureSaveRequest req, MultipartFile thumbnail) {
         String status = normalizeStatus(req.getStatus(), STATUS_DRAFT);
-        // 공개 가드: 새 강의는 영상·자료가 없으므로 open 불가
         if (STATUS_OPEN.equals(status)) {
             throw new CannotPublish();
         }
@@ -73,11 +72,10 @@ public class LectureService {
      * 강의 수정. 기본정보 + 썸네일(선택). 본인 강의만.
      * status 생략 시 기존 상태 유지. status=open 은 영상·자료가 DB에 모두 있어야 통과.
      */
-    public void update(int lid, int instructorUserId, LectureSaveRequest req, MultipartFile thumbnail) {
+    public void update(int lid, long instructorUserId, LectureSaveRequest req, MultipartFile thumbnail) {
         if (!lectureRepository.isOwnedByInstructor(lid, instructorUserId)) {
             throw new NotFoundOrForbidden();
         }
-        // status 를 안 주면 기존 값 유지, 주면 정규화
         String status = req.getStatus();
         if (status == null || status.isBlank()) {
             LectureDetail cur = lectureRepository.findDetail(lid, instructorUserId);
@@ -85,7 +83,6 @@ public class LectureService {
         } else {
             status = normalizeStatus(status, STATUS_DRAFT);
         }
-        // 공개 가드: open 으로 바꾸려면 영상·자료가 둘 다 있어야 함
         if (STATUS_OPEN.equals(status) && !lectureRepository.hasVideoAndMaterial(lid)) {
             throw new CannotPublish();
         }
@@ -101,7 +98,7 @@ public class LectureService {
      *   - 보낸 칸만 교체, 안 보낸 칸은 그대로 둔다.
      * 본인 강의만. 슬롯별 허용 확장자가 아니면 예외.
      */
-    public void uploadFiles(int lid, int instructorUserId, MultipartFile video, MultipartFile material) {
+    public void uploadFiles(int lid, long instructorUserId, MultipartFile video, MultipartFile material) {
         if (!lectureRepository.isOwnedByInstructor(lid, instructorUserId)) {
             throw new NotFoundOrForbidden();
         }
@@ -131,7 +128,6 @@ public class LectureService {
 
     // ---------------- 헬퍼 ----------------
 
-    /** 썸네일 검증 후 저장 + 경로 갱신. */
     private void storeThumbnail(int lid, MultipartFile thumbnail) {
         String ext = extensionOf(thumbnail.getOriginalFilename());
         if (!IMAGE_EXT.contains(ext)) {
@@ -141,7 +137,6 @@ public class LectureService {
         lectureRepository.updatePicture(lid, path);
     }
 
-    /** 허용된 status 만 통과. 아니면 기본값. */
     private String normalizeStatus(String status, String fallback) {
         if (status == null) return fallback;
         String s = status.trim().toLowerCase(Locale.ROOT);
@@ -151,7 +146,6 @@ public class LectureService {
         return fallback;
     }
 
-    /** 파일명에서 소문자 확장자를 뽑는다. 없으면 빈 문자열. */
     private String extensionOf(String filename) {
         if (filename == null) return "";
         int dot = filename.lastIndexOf('.');
