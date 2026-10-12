@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 /**
  * 강사 신청 기능에서 쓰는 JDBC 접근.
  * 컬럼명은 Oracle 예약어(uid)를 피해 user_id 를 쓴다.
+ * user_id 는 JWT 에서 온 값이라 long 으로 받는다(바인딩이라 타입만 맞으면 안전).
  */
 @Repository
 public class InstructorApplyRepository {
@@ -20,10 +21,9 @@ public class InstructorApplyRepository {
     /**
      * 사용자의 auth 값을 조회한다.
      * 0 일반 / 1 수강생 / 2 강사 / 3 관리자 / 4 강사 신청 대기
-     *
      * @return auth 값. 해당 사용자가 없으면 null.
      */
-    public Integer findAuthByUserId(int userId) {
+    public Integer findAuthByUserId(long userId) {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT auth FROM users WHERE user_id = ?",
@@ -35,7 +35,7 @@ public class InstructorApplyRepository {
     }
 
     /** 사용자의 실명(uname)을 조회한다. 없으면 null. */
-    public String findUnameByUserId(int userId) {
+    public String findUnameByUserId(long userId) {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT uname FROM users WHERE user_id = ?",
@@ -49,7 +49,7 @@ public class InstructorApplyRepository {
      * instructors 에 신청 행을 추가한다.
      * iname 은 신청 시점엔 실명(uname)으로 채운다. approved_at 은 NULL(대기).
      */
-    public void insertApplication(int userId, String iname, String bio, String field,
+    public void insertApplication(long userId, String iname, String bio, String field,
                                   String careerFile, String fileName) {
         jdbcTemplate.update(
                 "INSERT INTO instructors " +
@@ -59,10 +59,9 @@ public class InstructorApplyRepository {
     }
 
     /** 사용자의 auth 를 바꾼다. (신청 시 4=신청 대기로) */
-    public void updateAuth(int userId, int auth) {
+    public void updateAuth(long userId, int auth) {
         jdbcTemplate.update(
                 "UPDATE users SET auth = ? WHERE user_id = ?",
                 auth, userId);
     }
-
 }

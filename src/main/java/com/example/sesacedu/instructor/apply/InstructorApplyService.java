@@ -10,6 +10,7 @@ import org.springframework.web.multipart.MultipartFile;
  * 강사 신청 기능 로직.
  *   - getStatus : 신청 상태 조회 (auth 기반)
  *   - apply     : 강사 신청 (파일 저장 + instructors 행 추가 + auth 변경)
+ * user_id 는 컨트롤러가 JWT 에서 추출해 long 으로 넘겨준다.
  */
 @Service
 public class InstructorApplyService {
@@ -30,7 +31,7 @@ public class InstructorApplyService {
     }
 
     /** 신청 상태 조회 */
-    public ApplyStatusResponse getStatus(int userId) {
+    public ApplyStatusResponse getStatus(long userId) {
         Integer auth = applyRepository.findAuthByUserId(userId);
         if (auth == null) {
             throw new UserNotFoundException();
@@ -53,7 +54,7 @@ public class InstructorApplyService {
      * @throws AlreadyAppliedException   이미 신청/강사/관리자라 신청 불가 (409)
      */
     @Transactional
-    public void apply(int userId, String introduce, String subject, MultipartFile career) {
+    public void apply(long userId, String introduce, String subject, MultipartFile career) {
         Integer auth = applyRepository.findAuthByUserId(userId);
         if (auth == null) {
             throw new UserNotFoundException();
