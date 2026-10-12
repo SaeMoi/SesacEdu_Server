@@ -18,12 +18,13 @@ import java.util.Date;
 /**
  * JWT 발급·검증·디코딩 공통 헬퍼 (Notion API 명세서: 로그인 / JWT 재발급 / 로그아웃 / 현재 비밀번호 확인).
  *
- * - 로그인 토큰 : HS256, payload { sub(users.user_id 문자열), name(uname), role, reissue_num, exp }, 60분 (공용으로 사용)
- * - reauth 토큰 : HS256, payload { sub, typ:"reauth", purpose, exp }, 10분, 헤더 X-Reauth-Token (/mypage/password-verify에서 사용)
+ * - 로그인 토큰 : HS256, payload { sub(users.user_id 문자열), role, reissue_num, exp }, 60분
+ * - reauth 토큰 : HS256, payload { sub, typ:"reauth", purpose, exp }, 10분, 헤더 X-Reauth-Token
  * - 서버 저장 없음 (Redis·토큰 테이블 없음). 이 클래스는 서명 키와 설정값만 가지며 회원별 상태를 두지 않는다.
- * 실패는 {@link JwtAuthException}(HTTP 상태 + code + message)로 던진다.
- * 전역 예외 처리기에서 { code, message, result:null } 로 변환 **/
-
+ *
+ * 실패는 {@link JwtAuthException}(HTTP 상태 + code + message)로 던진다. 전역 예외 처리기에서
+ * { code, message, result:null } 로 변환하면 된다.
+ **/
 @Component
 public class JwtUtil {
 
@@ -37,7 +38,6 @@ public class JwtUtil {
     /** users.auth(0~4) 순서대로의 role 코드 */
     private static final String[] ROLES = {"GENERAL", "STUDENT", "INSTRUCTOR", "ADMIN", "INSTRUCTOR_PENDING"};
 
-    private static final String CLAIM_NAME = "name";
     private static final String CLAIM_ROLE = "role";
     private static final String CLAIM_REISSUE = "reissue_num";
     private static final String CLAIM_TYP = "typ";
@@ -62,15 +62,15 @@ public class JwtUtil {
 
     // ================================================================ 발급
 
-    public String createLoginToken(long userId, String uname, int auth) {
-        return createToken(userId, uname, roleOf(auth), reissueMax);
+    public String createLoginToken(long userId, int auth) {
+        return createToken(userId, roleOf(auth), reissueMax);
     }
 
-    public String createToken(long userId, String uname, String role, int reissueNum) {
+
+    public String createToken(long userId, String role, int reissueNum) {
         Instant now = Instant.now();
         return Jwts.builder()
                 .subject(String.valueOf(userId))
-                .claim(CLAIM_NAME, uname)
                 .claim(CLAIM_ROLE, role)
                 .claim(CLAIM_REISSUE, reissueNum)
                 .expiration(Date.from(now.plusSeconds(ttlSeconds)))
@@ -78,8 +78,8 @@ public class JwtUtil {
                 .compact();
     }
 
-    public String reissue(Claims expired, String uname, int auth) {
-        return createToken(getUid(expired), uname, roleOf(auth), getReissueNum(expired) - 1);
+    public String reissue(Claims expired, int auth) {
+        return createToken(getUid(expired), roleOf(auth), getReissueNum(expired) - 1);
     }
 
     /** POST /mypage/verify-password: reauth JWT (10분). purpose = PROFILE_UPDATE / PASSWORD_CHANGE */
@@ -102,7 +102,8 @@ public class JwtUtil {
         return ROLES[auth];
     }
 
-    // ================================================================ 검증 
+    // ================================================================ 검증 (JwtFilter 등)
+
     public Claims parse(String token) {
         try {
             return checkLoginToken(verify(token).getPayload());
@@ -112,17 +113,21 @@ public class JwtUtil {
         }
     }
 
+    /** 요청의 Authorization 헤더로 {@link #parse(String)} */
     public Claims parse(HttpServletRequest request) {
         return parse(requireToken(request));
     }
+
     public Claims parseIgnoringExpiry(String token) {
         try {
             return checkLoginToken(verify(token).getPayload());
         } catch (ExpiredJwtException e) {
             checkAlg(e.getHeader().getAlgorithm());
-            return checkLoginToken(e.getClaims());
+            return checkLoginToken(e.getClaims()); // 서명은 exp 검사 전에 이미 검증됨
         }
     }
+
+
     public Claims parseForReissue(String token) {
         Claims claims;
         try {
@@ -141,6 +146,7 @@ public class JwtUtil {
         return claims;
     }
 
+
     public void verifyReauthToken(String reauthToken, long userId, String purpose) {
         try {
             Claims c = verify(reauthToken).getPayload();
@@ -150,7 +156,7 @@ public class JwtUtil {
                 return;
             }
         } catch (JwtException | JwtAuthException e) {
-           
+            // 아래에서 403
         }
         throw new JwtAuthException(403, "REAUTH_REQUIRED", "본인 확인이 필요합니다.");
     }
@@ -193,8 +199,6 @@ public class JwtUtil {
         }
     }
 
-    public String getName(Claims c) { return c.get(CLAIM_NAME, String.class); }
-
     public String getRole(Claims c) { return c.get(CLAIM_ROLE, String.class); }
 
     public int getReissueNum(Claims c) {
@@ -203,18 +207,15 @@ public class JwtUtil {
     }
 
     public long getUid(String token)          { return getUid(parse(token)); }
-    public String getName(String token)       { return getName(parse(token)); }
     public String getRole(String token)       { return getRole(parse(token)); }
     public int getReissueNum(String token)    { return getReissueNum(parse(token)); }
 
     public long getUid(HttpServletRequest r)       { return getUid(parse(r)); }
-    public String getName(HttpServletRequest r)    { return getName(parse(r)); }
     public String getRole(HttpServletRequest r)    { return getRole(parse(r)); }
     public int getReissueNum(HttpServletRequest r) { return getReissueNum(parse(r)); }
 
     // ================================================================ 내부
 
-    /** 서명 검증 + HS256 확인. 만료면 ExpiredJwtException 그대로 던짐, 그 외 실패는 401 UNAUTHORIZED */
     private Jws<Claims> verify(String token) {
         if (token == null || token.isBlank()) throw unauthorized();
         Jws<Claims> jws;
@@ -229,6 +230,7 @@ public class JwtUtil {
         return jws;
     }
 
+    /** 같은 키로 HS384/HS512 서명한 토큰도 jjwt는 받아 주므로 명세대로 HS256만 허용 */
     private void checkAlg(String alg) {
         if (!"HS256".equals(alg)) throw unauthorized();
     }
@@ -243,6 +245,7 @@ public class JwtUtil {
         return new JwtAuthException(401, "UNAUTHORIZED", "인증 정보가 올바르지 않습니다.");
     }
 
+    /** JWT 관련 실패. status = HTTP 상태, code·message = 응답 본문 { code, message, result:null } */
     public static class JwtAuthException extends RuntimeException {
         private final int status;
         private final String code;
