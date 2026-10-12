@@ -1,124 +1,89 @@
-# 강의 조회 API
+# 강의 API
 
-강의 목록·상세 조회. 데이터는 공유 RDS(Oracle 19)에 있고 다른 DB 는 쓰지 않는다.
+강의 목록·상세, 수강 화면(영상·목차·자료·과제·수료), 리뷰, Q&A 를 다룬다. 데이터는 공유 RDS(Oracle 19)에 있고 다른 DB 는 쓰지 않는다.
 
-목록과 비로그인 상세 조회를 구현했다. 로그인 미구매·수강자 분기 로직도 테스트했지만, 실제 JWT 검증기는 아직 연결되지 않았다. Oracle 실서버 연동과 프론트 화면 연동도 별도 확인이 필요하다.
+## 실행
 
-## 요청·응답 계약
+`.env` 에 다음 값을 둔다. `.env` 는 git 에 올리지 않는다.
 
-| 메서드·경로 | 입력 | 응답 | 권한 |
-|---|---|---|---|
-| GET `/lectures` | query: keyword, category, level, sort, page, size. body 없음 | lectures 배열, page 객체 | 공개 |
-| GET `/lectures/{Lid}` | 양수 정수 강의 번호. body 없음. 로그인 시 Authorization 헤더 | 상세·공개 강사 정보·평점·viewerState | 공개. 개인별 상태는 검증된 사용자 기준 |
-
-두 API 모두 `status='open'`인 강의만 조회한다. 상세의 없는 강의·draft·closed는 404다. 구매자의 closed 강의 접근 정책은 수강 API 작업에서 별도로 확인한다.
-
-### 목록
-
-- keyword: 강의명 부분 검색. 앞뒤 공백을 없애고 빈 값은 필터 없음으로 처리한다. `%`, `_`, `\`는 와일드카드가 아닌 문자로 검색한다.
-- category, level: DB 값과 일치 검색. 미지정·공백이면 필터 없음. 미등록 값은 빈 결과다.
-- page: 1부터 시작, 기본 1. size: 기본 12, 1~50. 정수 범위를 넘는 offset은 400.
-- sort: 기본 `lid_desc`, 허용 `lid_desc`, `price_asc`, `price_desc`, `latest`.
-- 노션에 적힌 `id_desc`는 `lid_desc`, `pric_desc`는 `price_desc`의 별칭으로 지원한다. `latest`는 기존 코드 호환용 등록 시각순이다. 가격 동률은 강의 번호 내림차순으로 고정한다.
-- 결과가 없으면 `lectures: []`, total/totalPages는 0. 마지막 페이지를 넘으면 빈 배열과 전체 건수를 반환한다.
-- rating은 리뷰가 없으면 null, 있으면 소수 첫째 자리까지 반올림. reviewCount는 0 이상이다.
-
-```http
-GET /lectures?keyword=보안&sort=price_asc&page=1&size=12
+```
+DB_URL=jdbc:oracle:thin:@//<RDS 엔드포인트>:1521/<서비스명>
+DB_USER=...
+DB_PASSWORD=...
+JWT_SECRET=...   # 32바이트 이상
 ```
 
-```json
-{
-  "lectures": [
-    {
-      "lid": 1,
-      "name": "웹 보안 입문",
-      "headline": "보안의 기초",
-      "picture": null,
-      "instructor": "예시 강사",
-      "category": "웹 보안",
-      "level": "입문",
-      "price": 49000,
-      "rating": 4.5,
-      "reviewCount": 2
-    }
-  ],
-  "page": { "current": 1, "size": 12, "total": 1, "totalPages": 1 }
-}
-```
-
-### 상세
-
-| viewerState | 조건 | 표시용 action | 추가 필드 |
-|---|---|---|---|
-| guest | 인증 헤더 없음 | purchase | price |
-| member | JWT 검증 후 해당 수강 행 없음 | purchase | price |
-| enrolled | JWT 검증 후 enrollments(user_id,Lid) 존재 | continue | done, position(값이 있으면), learnUrl, materialUrl, assignmentUrl. price 생략 |
-
-응답은 기존 명세대로 목록은 `lid`, 상세는 `lectureId`를 사용한다. 이 둘을 임의로 통일하지 않았다. API 이름과 DB의 `Lid`, `Lprice`, `user_id`는 DTO에서 매핑한다.
-
-상세에는 name/headline/summary/category/level/picture/preview/intro, instructor, otherLectures, rating/reviewCount, viewerState/action이 들어간다. nullable 상세 필드는 생략된다. intro는 현재 summary를 줄바꿈으로 나눈 배열이며, 별도 소개 항목 저장 구조는 없다. otherLectures는 같은 강사의 다른 공개 강의 최대 5건이다.
-
-`learnUrl` 등은 다음 기능의 API 주소 계약일 뿐, 이번 구현에서 영상·자료·과제 API가 실행된다는 뜻은 아니다. 실제 영상·자료 저장 경로는 상세 조회 SQL에서도 읽지 않는다. 비밀번호·JWT·정산 계좌도 반환하지 않는다.
-
-### 오류
-
-```json
-{"code":"INVALID_SORT","message":"정렬 조건이 올바르지 않습니다."}
-```
-
-| HTTP | code | 조건 |
-|---|---|---|
-| 400 | INVALID_PAGE | 페이지/크기 범위 오류·offset overflow |
-| 400 | INVALID_SORT | 미지원 정렬 |
-| 400 | INVALID_INPUT | 숫자 자리의 문자, 0 이하 강의 번호 |
-| 404 | LECTURE_NOT_FOUND | 강의 없음·비공개 |
-| 401 | UNAUTHORIZED | 상세 요청의 인증 헤더 형식 오류, 검증기에서 거부한 토큰 |
-| 503 | AUTH_NOT_CONFIGURED | 상세 요청에 토큰이 있으나 JWT 검증기 미연결 |
-
-목록은 인증 정보가 필요 없는 공개 API라 토큰을 처리하지 않는다.
-
-## 최신 명세와 확인할 차이
-
-근거: [목록 명세](https://app.notion.com/p/456c85bae88482f7a51f01d77b7c167a), [상세 명세](https://app.notion.com/p/076c85bae88482cea9ef0195b915f001).
-
-- 상세 명세의 세션 쿠키 안내는 JWT 전환 결정 이전 내용이다. Authorization Bearer를 받는 연결점을 만들었다.
-- 상세 상태표는 400, 예시는 404로 충돌한다. 없는 자원은 기존 구현·예시를 따라 404로 구현했다.
-- 목록 sort의 오탈자는 위 별칭으로 수용했다. category 예시와 최신 DB의 분류명은 다르므로 프론트는 실제 DB 값을 보내야 한다.
-- size는 기존 코드에 있던 선택 query를 유지했다. 노션 query 표에는 아직 없다.
-- notices 테이블이 없어 `noticeCount`를 0이라고 만들어 반환하지 않는다. 해당 필드를 생략한다.
-- catchphrase는 저장 컬럼이 없어 현재 instructor 안에서 null이다. 프론트 표시 여부를 확인해야 한다.
-- 최신 DBML이 실제 Oracle에 적용되었는지 확인이 필요하다. `user_id`, headline, summary, preview, enrollments.position 등을 사용한다.
-
-## 코드가 이어지는 과정
-
-예를 들어 프론트가 `GET /lectures?sort=price_asc`를 보내면 다음 순서로 처리한다.
-
-1. `student/lecture/LectureController.java`: 주소와 GET 요청을 받고 query 값을 Java 인자로 바꾼다.
-2. `student/lecture/LectureService.java`: page·size를 검사하고 `price_asc`를 정해진 SQL 정렬로 바꾼다. 응답에 필요한 형태를 결정한다.
-3. `student/lecture/LectureRepository.java`: JdbcTemplate로 SQL을 실행한다. 검색어는 `?`에 바인딩하고 공개 강의와 리뷰 집계만 조회한다.
-4. 조회 결과 객체 `LectureCard`를 `dto/LectureListItemResponse`로 바꾼다. DB 전체 행을 그대로 노출하지 않는다.
-5. `LectureListResponse`를 반환하면 Spring이 JSON으로 직렬화해 프론트에 보낸다. 프론트는 lectures 배열로 카드를 그리고 page로 페이지 버튼을 그린다.
-
-Controller/Service/Repository는 서로 다른 역할이지만 폴더를 따로 나누지는 않는다. 최신 개발 규칙대로 `student/lecture/`에 함께 있고 DTO만 `dto/`에 둔다. 공개 목록도 수강생용 강의 탐색 기능이라 이 위치에 둔다. 폴더명이 접근 권한을 정하는 것은 아니다.
-
-공통 오류는 `global/exception/`, 인증 연결은 `global/auth/`, 인자 해석기 등록은 `global/config/WebMvcConfig.java`다. 테스트는 `src/test/java/com/example/sesacedu/student/lecture/`에 있다.
-
-## JWT 담당 코드 연결
-
-10/12 확정: 토큰 검증은 다른 담당자가 global에 구현한다. 강의 기능에서 별도 JWT 검증기를 만들지 않는다. AccessTokenVerifier는 임시 연결 경계이며 팀 코드가 공유되면 해당 인터페이스·사용자 정보 전달 방식에 맞춰 연결하거나 대체한다.
-
-`AccessTokenVerifier`를 구현한 Spring 빈이 검증된 `CurrentUser`를 반환하도록 연결한다. 서명·허용 알고리즘·만료·발급자/대상 등 팀 JWT 계약, 계정 제한 및 폐기 정책은 해당 구현체가 확인해야 한다. 사용자 ID를 query나 미검증 payload에서 받지 않는다.
-
-현재 검증기 구현체는 없다. `users.token` 문자열 일치만 확인하던 초안은 만료를 검증하지 못해 인증 경로에서 제거했다. 토큰을 제시했는데 검증기가 없으면 503을 반환한다. 단위·HTTP 테스트에서만 가짜 검증기를 사용하며 배포 코드에는 우회 검증기가 없다.
-
-## 실행·검증
-
-`.env` 에 `DB_URL`, `DB_USER`, `DB_PASSWORD`(RDS), `JWT_SECRET` 을 둔다. `.env` 는 git 에 올리지 않는다. JDK 11 에서 실행한다.
+JDK 11 에서 실행한다.
 
 ```powershell
-.\gradlew.bat bootRun   # http://localhost:8080, Swagger 는 /swagger
-.\gradlew.bat test      # 스프링 설정 테스트는 같은 RDS 에 붙는다
+.\gradlew.bat bootRun      # http://localhost:8080, Swagger 는 /swagger
+.\gradlew.bat test         # 테스트도 같은 RDS 에 붙는다
 ```
 
-테스트 범위는 서비스 분기, MockMvc 의 요청·응답/권한 경계, 실제 Spring 설정의 빈 등록이다. SQL 은 RDS 에서 직접 호출해 확인한다.
+테스트 중 쓰기는 트랜잭션 안에서 실행하고 끝나면 롤백한다. 테스트를 돌려도 RDS 데이터는 바뀌지 않는다.
+
+## 인증
+
+- 요청 헤더 `Authorization: Bearer {JWT}`.
+- 검증 순서: JWT 서명·만료 → `users.token` 에 저장된 토큰과 같은지 → `users.status` 가 `restricted` 가 아닌지.
+- 로그인할 때 저장한 토큰만 유효하다. 다시 로그인하면 이전 토큰은 401, 로그아웃해서 `token` 이 NULL 이 되면 401 이다.
+- 개발용 `GET /dev/token?userId={번호}&auth={0~4}` 는 토큰을 만들어 `users.token` 에 저장하고 돌려준다. 없는 사용자는 404.
+
+| 상황 | 응답 |
+|---|---|
+| 헤더 없음 | 공개 API 는 비로그인으로 처리, 그 밖은 401 `UNAUTHORIZED` |
+| Bearer 형식 아님·서명 틀림 | 401 `UNAUTHORIZED` |
+| 만료 | 401 `TOKEN_EXPIRED` |
+| DB 토큰과 다름·NULL | 401 `TOKEN_NOT_ACTIVE` |
+| 제한된 계정 | 403 `ACCOUNT_RESTRICTED` |
+
+## 접근 규칙
+
+| 구분 | 경로 | 조건 |
+|---|---|---|
+| 공개 | `GET /lectures`, `/lectures/{Lid}`, `/lectures/{Lid}/preview` | `status='open'` 강의만. 없거나 draft·closed 는 404 |
+| 공개 | `GET /lectures/{Lid}/reviews`, `/lectures/{Lid}/qna` | 목록의 비밀글 제목은 작성자·담당 강사가 아니면 `비밀글입니다.` |
+| 비밀글 | `GET /lectures/{Lid}/qna/{qnaid}` | 공개글은 누구나. 비밀글은 비로그인 401, 작성자·담당 강사가 아니면 403 `SECRET_QNA` |
+| 수강자 | `/learn`, `/learn/video`, `/learn/position`, `/complete`, `/material`, `/material/download`, `/assignment`, `/assignments/**` | 로그인 + `enrollments(user_id, Lid)` 행. 없으면 403 `NOT_ENROLLED`. 강의는 open·closed 만 |
+| 수강자 | `POST·PUT·DELETE /reviews`, `POST /qna` | 로그인 + 수강 + 공개 강의 |
+
+## 엔드포인트
+
+| 메서드 | 경로 | 응답 |
+|---|---|---|
+| GET | `/lectures?keyword&category&level&sort&page&size` | `lectures[]`, `page` |
+| GET | `/lectures/{Lid}` | 상세, `viewerState`(guest·member·enrolled). enrolled 는 `done`·`position`·각 화면 주소 |
+| GET | `/lectures/{Lid}/preview` | 맛보기 영상(Range 지원) |
+| GET | `/lectures/{Lid}/learn` | `videoUrl`, `duration`, `position`, `done`, `chapters[{startSec,title}]` |
+| GET | `/lectures/{Lid}/learn/video` | 본 영상(Range 지원) |
+| PUT | `/lectures/{Lid}/learn/position` | body `{position}` → 204 |
+| POST | `/lectures/{Lid}/complete` | 저장 위치가 영상 길이에 닿으면 수료. 이미 수료 409 `ALREADY_COMPLETED`, 덜 봄 409 `NOT_WATCHED_ENOUGH` |
+| GET | `/lectures/{Lid}/material` | `filename`, `downloadUrl` |
+| GET | `/lectures/{Lid}/material/download` | 자료 파일 |
+| GET | `/lectures/{Lid}/assignment` | 과제 안내와 내 제출물 |
+| POST | `/lectures/{Lid}/assignments` | body `{work, workFilename, note}`. 파일·내용 중 하나 필수, 내용 3000자. 1인 1건(409 `ALREADY_SUBMITTED`) → 201 `{id}` |
+| GET·PUT·DELETE | `/lectures/{Lid}/assignments/{aid}` | 제출물 조회·수정·삭제. 채점 뒤 수정·삭제 409 `ALREADY_SCORED` |
+| GET | `/lectures/{Lid}/assignments/{aid}/file` | 제출 파일. 파일 없이 낸 경우 404 `SUBMISSION_FILE_NOT_FOUND` |
+| GET | `/lectures/{Lid}/reviews?page&size` | `reviews[]`, `page`, `rating`, `reviewCount` |
+| POST·PUT | `/lectures/{Lid}/reviews` | body `{star 1~5, review ≤2000}`. 1인 1건(409 `ALREADY_REVIEWED`) |
+| DELETE | `/lectures/{Lid}/reviews` | 내 리뷰 삭제 → 204 |
+| GET | `/lectures/{Lid}/qna?status=answered\|waiting&page&size` | `questions[]`, `page` |
+| POST | `/lectures/{Lid}/qna` | body `{title ≤200, question ≤4000, secret}` → 201 `{id}` |
+| GET | `/lectures/{Lid}/qna/{qnaid}` | 질문·답변 상세 |
+
+정렬 값: `lid_desc`(= `id_desc`, `default`), `latest`, `price_asc`(= `low`), `price_desc`(= `pric_desc`, `high`). 분류: `개발 기초` `로그 분석` `웹 보안` `네트워크` `클라우드`. 난이도: `입문` `초급` `중급`. `all` 은 필터 없음.
+
+오류 본문은 모두 `{code, message}` 다. 노션 API 명세서(카테고리 "강의")에 엔드포인트별 요청·응답 예시가 있다.
+
+## 파일
+
+DB 의 경로 컬럼(`video`, `material`, `preview`, `assignments.work`)은 `app.storage.root`(기본 `./storage`) 아래 상대 경로로 읽는다.
+
+## 테스트
+
+| 파일 | 내용 |
+|---|---|
+| `LectureRdsRepositoryTest` | 강의 SQL 을 RDS 에서 실행. 읽기와 쓰기(롤백) |
+| `global/auth/JwtAccessTokenVerifierTest` | DB 토큰 대조·제한 계정. RDS, 롤백 |
+| `Lecture*ControllerTest`, `Lecture*WriteTest`, `LectureServiceTest`, `LecturePreviewTest`, `LectureFileStorageTest` | HTTP 계약·서비스 분기. 저장소는 목 객체 |
+| `LectureApplicationTest`, `SesacEduApplicationTests` | 실제 스프링 설정 로딩(RDS 연결) |
