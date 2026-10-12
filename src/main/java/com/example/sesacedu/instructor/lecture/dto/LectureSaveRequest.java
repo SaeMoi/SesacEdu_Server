@@ -6,6 +6,12 @@ package com.example.sesacedu.instructor.lecture.dto;
  * 썸네일은 이 DTO 가 아니라 컨트롤러의 thumbnail 파일 파라미터로 받고,
  * 영상·자료는 별도 업로드 API(/{lid}/files)로 올린다.
  *
+ * DB 매핑(rebuild_oracle.sql 기준):
+ *   level    -> lectures.lvl
+ *   headline -> lectures.headline (강의 한 줄 소개)
+ *   summary  -> lectures.summary  (강의 소개 본문)
+ *   price    -> lectures.Lprice
+ *
  * status 매핑:
  *   "저장하고 다음"(미완성) -> draft
  *   공개 -> open / 비공개 -> closed
@@ -15,8 +21,9 @@ public class LectureSaveRequest {
 
     private String name;       // 강의 제목 (필수)
     private String category;   // 카테고리 (필수)
-    private String level;      // 난이도 (선택)
-    private String intro;      // 강의 소개 (선택)
+    private String level;      // 난이도 (필수)
+    private String headline;   // 강의 한 줄 소개 (필수)
+    private String summary;    // 강의 소개 본문 (선택)
     private Integer price;     // 가격 (필수)
     private String status;     // draft / open / closed (선택; 등록 시 생략하면 draft)
 
@@ -32,8 +39,11 @@ public class LectureSaveRequest {
     public String getLevel() { return level; }
     public void setLevel(String level) { this.level = level; }
 
-    public String getIntro() { return intro; }
-    public void setIntro(String intro) { this.intro = intro; }
+    public String getHeadline() { return headline; }
+    public void setHeadline(String headline) { this.headline = headline; }
+
+    public String getSummary() { return summary; }
+    public void setSummary(String summary) { this.summary = summary; }
 
     public Integer getPrice() { return price; }
     public void setPrice(Integer price) { this.price = price; }
