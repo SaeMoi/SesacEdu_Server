@@ -53,7 +53,7 @@ public class InstructorApplyRepository {
                                   String careerFile, String fileName) {
         jdbcTemplate.update(
                 "INSERT INTO instructors " +
-                        "(user_id, iname, bio, field, career_file, file_name, applied_at, approved_at) " +
+                        "(user_id, iname, bio, field, career_file, career_filename, applied_at, approved_at) " +
                         "VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP, NULL)",
                 userId, iname, bio, field, careerFile, fileName);
     }
