@@ -93,6 +93,38 @@ public class FeedbackRepository {
         }
     }
 
+    // ---------------- 다운로드용 파일 정보 ----------------
+
+    /** 다운로드에 필요한 최소 정보: 원본 파일명(work) + 저장 경로(work_path). */
+    public static class FileInfo {
+        public final String work;      // 원본 파일명
+        public final String workPath;  // 저장 경로(키)
+        public FileInfo(String work, String workPath) {
+            this.work = work;
+            this.workPath = workPath;
+        }
+    }
+
+    private static final RowMapper<FileInfo> FILE_MAPPER = (rs, rowNum) ->
+            new FileInfo(rs.getString("work"), rs.getString("work_path"));
+
+    /**
+     * 과제의 제출 파일 정보를 조회한다. 담당 강사의 강의에 속한 것만.
+     * @return 없거나 권한 없으면 null
+     */
+    public FileInfo findFileInfo(int aid, int instructorUserId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT a.work, a.work_path " +
+                            "FROM assignments a " +
+                            "JOIN lectures l ON a.lid = l.lid " +
+                            "WHERE a.aid = ? AND l.user_id = ?",
+                    FILE_MAPPER, aid, instructorUserId);
+        } catch (EmptyResultDataAccessException e) {
+            return null;
+        }
+    }
+
     // ---------------- 권한/존재 확인 ----------------
 
     /**

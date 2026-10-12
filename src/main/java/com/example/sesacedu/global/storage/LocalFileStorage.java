@@ -3,6 +3,8 @@ package com.example.sesacedu.global.storage;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 /**
@@ -26,5 +28,25 @@ public class LocalFileStorage implements FileStorage {
         String original = file.getOriginalFilename();
         String random = UUID.randomUUID().toString().substring(0, 8);
         return prefix + "/" + random + "_" + original;
+    }
+
+    /**
+     * 저장 경로(키)로 다운로드 URL 을 만든다.
+     *
+     * 지금은 S3 가 없으므로 실제로 받을 수 있는 주소가 아니라,
+     * S3 presigned URL 자리에 들어갈 "형태만 흉내 낸" 임시 URL 을 돌려준다.
+     * (프론트 연동/화면 테스트용. 실제 다운로드는 S3 구현 후 가능하다.)
+     *
+     * TODO: S3 준비되면 이 메서드만 presigned URL 생성으로 교체한다.
+     *       예) AmazonS3.generatePresignedUrl(bucket, key, 만료시간)
+     */
+    @Override
+    public String getDownloadUrl(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        String encoded = URLEncoder.encode(path, StandardCharsets.UTF_8);
+        // S3 가상 호스팅 형식을 흉내 낸 임시 주소 (실제로 받아지지는 않는다)
+        return "https://sesacedu-local.example/files/" + encoded;
     }
 }

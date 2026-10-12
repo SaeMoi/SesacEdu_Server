@@ -1,6 +1,7 @@
 package com.example.sesacedu.instructor.feedback;
 
 import com.example.sesacedu.instructor.feedback.dto.AssignmentDetail;
+import com.example.sesacedu.instructor.feedback.dto.AssignmentDownload;
 import com.example.sesacedu.instructor.feedback.dto.AssignmentListItem;
 import com.example.sesacedu.instructor.feedback.dto.FeedbackSaveRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -61,6 +62,29 @@ public class FeedbackController {
             return ResponseEntity.ok(feedbackService.getDetail(aid, instructorUserId));
         } catch (FeedbackService.NotFoundOrForbidden e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "과제 정보 없음");
+        }
+    }
+
+    // ---------------- 과제 파일 다운로드 ----------------
+    @Operation(summary = "과제 파일 다운로드",
+            description = "학생이 제출한 과제 파일의 다운로드 URL 을 발급한다. "
+                    + "서버가 파일을 직접 내려주지 않고, 받을 수 있는 URL(추후 S3 presigned URL)을 돌려준다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "다운로드 URL 발급 성공"),
+            @ApiResponse(responseCode = "404", description = "과제 없음/권한 없음/제출 파일 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 에러")
+    })
+    @GetMapping("/assignments/{assid}/download")
+    public ResponseEntity<AssignmentDownload> download(
+            @PathVariable("assid") int aid,
+            @Parameter(description = "임시 강사 사용자 번호 (추후 JWT 로 대체)")
+            @RequestParam("uid") int instructorUserId) {
+        try {
+            return ResponseEntity.ok(feedbackService.getDownload(aid, instructorUserId));
+        } catch (FeedbackService.NotFoundOrForbidden e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "과제 정보 없음");
+        } catch (FeedbackService.FileNotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "제출 파일이 없습니다.");
         }
     }
 
