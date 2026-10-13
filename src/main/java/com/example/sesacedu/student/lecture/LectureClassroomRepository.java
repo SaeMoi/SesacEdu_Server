@@ -2,8 +2,11 @@ package com.example.sesacedu.student.lecture;
 
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
@@ -59,6 +62,69 @@ public class LectureClassroomRepository {
         } catch (EmptyResultDataAccessException ex) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * 과제 제출을 새로 넣는다. 만들어진 aid 를 돌려준다.
+     *
+     * aid 는 DB 가 붙여 주는 값이라 INSERT 한 뒤 꺼내 와야 한다. Oracle 에서는
+     * RETURNING 절로 받는다. 다시 SELECT 하면 그 사이 다른 요청이 끼어들 수 있다.
+     */
+    public int insertSubmission(int lid, int userId, String work, String workFilename, String note) {
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO assignments (Lid, user_id, work, work_filename, Wnote, submitted) "
+                            + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                    new String[]{"AID"});
+            ps.setInt(1, lid);
+            ps.setInt(2, userId);
+            ps.setString(3, work);
+            ps.setString(4, workFilename);
+            ps.setString(5, note);
+            return ps;
+        }, key);
+        Number generated = key.getKey();
+        return generated == null ? 0 : generated.intValue();
+    }
+
+    /**
+     * 제출물 한 건을 번호로 찾는다.
+     *
+     * aid 와 함께 Lid 와 user_id 를 조건에 넣는다. aid 만으로 찾으면 번호를 하나씩
+     * 바꿔 가며 남의 제출물과 점수, 피드백을 읽을 수 있다. 제출 번호는 순차 증가라
+     * 추측하기 쉽다.
+     */
+    public Optional<SubmissionRow> findMySubmissionById(int lid, int userId, int aid) {
+        String sql = "SELECT aid, work_filename, Wnote, submitted, score, feedback, feedback_at "
+                + "FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ?";
+        try {
+            return Optional.of(jdbcTemplate.queryForObject(sql, this::mapSubmission, aid, lid, userId));
+        } catch (EmptyResultDataAccessException ex) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 제출물을 고친다. 고쳐진 행 수를 돌려준다. 0 이면 내 것이 아니거나 없는 것이다.
+     *
+     * score 와 feedback 은 건드리지 않는다. 그건 강사가 쓰는 값이라 제출자가
+     * 수정할 때 같이 덮이면 채점 결과가 사라진다.
+     */
+    public int updateSubmission(int lid, int userId, int aid,
+                                String work, String workFilename, String note) {
+        return jdbcTemplate.update(
+                "UPDATE assignments SET work = ?, work_filename = ?, Wnote = ?, "
+                        + "submitted = CURRENT_TIMESTAMP, updated = CURRENT_TIMESTAMP "
+                        + "WHERE aid = ? AND Lid = ? AND user_id = ?",
+                work, workFilename, note, aid, lid, userId);
+    }
+
+    /** 제출물을 지운다. 지워진 행 수를 돌려준다. 소유자 조건이 걸려 있다. */
+    public int deleteSubmission(int lid, int userId, int aid) {
+        return jdbcTemplate.update(
+                "DELETE FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ?",
+                aid, lid, userId);
     }
 
     private ClassroomRow mapClassroom(ResultSet rs, int rowNum) throws SQLException {

@@ -3,8 +3,11 @@ package com.example.sesacedu.student.lecture;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 
+import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.Optional;
 
@@ -122,6 +125,44 @@ public class LectureBoardRepository {
         } catch (EmptyResultDataAccessException ex) {
             return Optional.empty();
         }
+    }
+
+    /** 내가 이 강의에 이미 수강평을 썼는지. reviews 는 (Lid, user_id) 가 PK 라 1인 1건이다. */
+    public boolean existsReview(int lid, int userId) {
+        Integer n = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM reviews WHERE Lid = ? AND user_id = ?", Integer.class, lid, userId);
+        return n != null && n > 0;
+    }
+
+    /** 수강평을 넣는다. 번호가 따로 없는 테이블이라 돌려줄 키가 없다. */
+    public void insertReview(int lid, int userId, int star, String review) {
+        jdbcTemplate.update(
+                "INSERT INTO reviews (Lid, user_id, star, review, created) "
+                        + "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                lid, userId, star, review);
+    }
+
+    /**
+     * 질문을 넣는다. 만들어진 qid 를 돌려준다.
+     *
+     * isSecret 은 DB 에 0/1 로 들어간다. Oracle 에 boolean 타입이 없다.
+     */
+    public int insertQna(int lid, int userId, String title, String question, boolean secret) {
+        KeyHolder key = new GeneratedKeyHolder();
+        jdbcTemplate.update(connection -> {
+            PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO qna (Lid, user_id, title, question, isSecret, created) "
+                            + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                    new String[]{"QID"});
+            ps.setInt(1, lid);
+            ps.setInt(2, userId);
+            ps.setString(3, title);
+            ps.setString(4, question);
+            ps.setInt(5, secret ? 1 : 0);
+            return ps;
+        }, key);
+        Number generated = key.getKey();
+        return generated == null ? 0 : generated.intValue();
     }
 
     /** 이 강의의 담당 강사 user_id. 비밀글 열람 권한을 판단할 때 쓴다. */

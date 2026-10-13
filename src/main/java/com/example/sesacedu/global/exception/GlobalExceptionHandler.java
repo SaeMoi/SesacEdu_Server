@@ -3,6 +3,8 @@ package com.example.sesacedu.global.exception;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /**
@@ -23,6 +25,24 @@ public class GlobalExceptionHandler {
 
     // /lectures/abc 처럼 숫자 자리에 글자가 온 경우다. Spring 이 int 로 바꾸다 실패한다.
     // 메시지를 그대로 내보내면 어떤 타입으로 바꾸려 했는지가 드러나므로 고정 문구로 답한다.
+    // 본문 JSON 이 깨졌거나 형식이 안 맞는 경우다. 그냥 두면 스프링 기본 오류가
+    // 나가면서 timestamp 와 path 가 함께 실리고, 어떤 필드에서 깨졌는지까지 드러난다.
+    // 우리 형식으로 바꾸고 내용은 알려 주지 않는다.
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadable(HttpMessageNotReadableException ex) {
+        return ResponseEntity.badRequest()
+                .body(new ErrorResponse("INVALID_INPUT", "요청 본문을 읽을 수 없습니다."));
+    }
+
+    // 고유 제약을 어긴 경우다. 중복 검사를 먼저 하지만, 그 사이에 다른 요청이
+    // 같은 값을 넣으면 여기로 온다. DB 오류문을 그대로 내보내면 테이블명과
+    // 제약 이름이 드러나므로 409 로 바꾼다.
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<ErrorResponse> handleDuplicate(DuplicateKeyException ex) {
+        return ResponseEntity.status(409)
+                .body(new ErrorResponse("DUPLICATE", "이미 등록된 내용입니다."));
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
         return ResponseEntity.badRequest()

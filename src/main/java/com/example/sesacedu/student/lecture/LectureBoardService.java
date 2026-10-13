@@ -2,7 +2,10 @@ package com.example.sesacedu.student.lecture;
 
 import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.global.exception.ApiException;
+import com.example.sesacedu.student.lecture.dto.CreatedResponse;
 import com.example.sesacedu.student.lecture.dto.PageResponse;
+import com.example.sesacedu.student.lecture.dto.QnaWriteRequest;
+import com.example.sesacedu.student.lecture.dto.ReviewWriteRequest;
 import com.example.sesacedu.student.lecture.dto.QnaDetailResponse;
 import com.example.sesacedu.student.lecture.dto.QnaListResponse;
 import com.example.sesacedu.student.lecture.dto.ReviewListResponse;
@@ -111,6 +114,82 @@ public class LectureBoardService {
                 row.getQid(), lid, row.getUserId(), row.getNickname(),
                 row.getTitle(), row.getQuestion(), row.getAnswer(),
                 row.getAnsweredBy(), row.getAnsweredAt(), row.isSecret(), row.getCreated());
+    }
+
+    /**
+     * POST /lectures/{Lid}/reviews — 수강평 작성.
+     *
+     * 수강한 사람만 쓸 수 있다. 사지도 않은 강의에 평점을 매기면 평점이
+     * 무의미해진다. 수강 여부는 enrollments 로 본다.
+     */
+    public void writeReview(int lid, CurrentUser currentUser, ReviewWriteRequest request) {
+        requireEnrolledWriter(lid, currentUser);
+
+        if (request == null || request.getStar() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "평점을 입력해 주세요.");
+        }
+        // DB 는 1~5 를 강제하지 않는다. 여기서 막지 않으면 별 100 개짜리 리뷰가 들어가
+        // 평균이 통째로 망가진다.
+        if (request.getStar() < 1 || request.getStar() > 5) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "평점은 1에서 5 사이여야 합니다.");
+        }
+        if (request.getReview() != null && request.getReview().length() > 2000) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "수강평은 2000자까지 쓸 수 있습니다.");
+        }
+
+        // reviews 는 (Lid, user_id) 가 PK 라 1인 1건이다. 미리 보지 않으면
+        // PK 위반 오류가 그대로 올라온다.
+        if (boardRepository.existsReview(lid, currentUser.getUserId())) {
+            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_REVIEWED", "이미 수강평을 작성했습니다.");
+        }
+
+        boardRepository.insertReview(lid, currentUser.getUserId(),
+                request.getStar(), request.getReview());
+    }
+
+    /**
+     * POST /lectures/{Lid}/qna — 강의 질문 작성.
+     *
+     * 강의 안의 Q&A 라 수강자만 쓴다. 강의를 듣지 않는 사람의 질문은
+     * 서비스 문의(inquiries)로 간다.
+     */
+    public CreatedResponse writeQna(int lid, CurrentUser currentUser, QnaWriteRequest request) {
+        requireEnrolledWriter(lid, currentUser);
+
+        if (request == null || request.getTitle() == null || request.getTitle().trim().isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제목을 입력해 주세요.");
+        }
+        if (request.getTitle().length() > 200) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제목은 200자까지 쓸 수 있습니다.");
+        }
+        if (request.getQuestion() != null && request.getQuestion().length() > 4000) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "본문은 4000자까지 쓸 수 있습니다.");
+        }
+
+        // secret 을 안 보내면 공개글이다. 기본값을 비밀글로 두면 목록이 전부 가려진다.
+        boolean secret = Boolean.TRUE.equals(request.getSecret());
+
+        int qid = boardRepository.insertQna(lid, currentUser.getUserId(),
+                request.getTitle(), request.getQuestion(), secret);
+        return new CreatedResponse(qid);
+    }
+
+    /**
+     * 글을 쓸 수 있는가.
+     *
+     * 읽기는 공개지만 쓰기는 수강자만이다. 검사 순서는 읽기 쪽과 다르다 —
+     * 여기서는 강의가 공개인지(404)를 먼저 보고 로그인(401), 수강(403)을 본다.
+     * 읽기에서 404 를 뒤로 미룬 이유는 비로그인에게 강의 존재를 숨기려는 것인데,
+     * 쓰기 경로는 이미 공개 목록에 있는 강의만 대상이라 숨길 것이 없다.
+     */
+    private void requireEnrolledWriter(int lid, CurrentUser currentUser) {
+        requireOpenLecture(lid);
+        if (currentUser == null) {
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다.");
+        }
+        if (!lectureRepository.findEnrollment(currentUser.getUserId(), lid).isPresent()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "NOT_ENROLLED", "수강 중인 강의가 아닙니다.");
+        }
     }
 
     /**
