@@ -28,7 +28,7 @@ class LectureControllerTest {
     void setUp() {
         repository = mock(LectureRepository.class);
         beans = new DefaultListableBeanFactory();
-        mvc = MockMvcBuilders.standaloneSetup(new LectureController(new LectureService(repository)))
+        mvc = MockMvcBuilders.standaloneSetup(new LectureController(new LectureService(repository, new LectureFileStorage("./storage")), new FileResponses()))
                 .setCustomArgumentResolvers(new CurrentUserArgumentResolver(beans.getBeanProvider(AccessTokenVerifier.class)))
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
     }

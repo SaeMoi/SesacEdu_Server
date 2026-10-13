@@ -7,6 +7,8 @@ import com.example.sesacedu.student.lecture.LectureService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.core.io.Resource;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -28,11 +30,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class LectureController {
 
     private final LectureService lectureService;
+    private final FileResponses fileResponses;
 
     // Spring 이 LectureService 객체를 만들어 넣어 준다(생성자 주입).
     // new LectureService() 를 직접 쓰지 않으므로 테스트에서 가짜 Service 로 바꿔 끼울 수 있다.
-    public LectureController(LectureService lectureService) {
+    public LectureController(LectureService lectureService, FileResponses fileResponses) {
         this.lectureService = lectureService;
+        this.fileResponses = fileResponses;
     }
 
     @Operation(summary = "사이트 전체 강의 목록",
@@ -66,5 +70,12 @@ public class LectureController {
             @PathVariable("lid") int lid,
             @Parameter(hidden = true) CurrentUser currentUser) {
         return lectureService.detail(lid, currentUser);
+    }
+
+    @Operation(summary = "강의 맛보기 영상",
+            description = "공개 API. 공개(open) 강의의 맛보기 영상만 내려준다. 구간 요청(Range)을 받는다.")
+    @GetMapping("/{lid}/preview")
+    public ResponseEntity<Resource> preview(@PathVariable("lid") int lid) {
+        return fileResponses.send(lectureService.previewFile(lid), false);
     }
 }

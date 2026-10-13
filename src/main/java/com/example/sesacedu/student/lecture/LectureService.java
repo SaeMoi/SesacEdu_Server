@@ -17,6 +17,7 @@ import com.example.sesacedu.student.lecture.LectureRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -39,9 +40,11 @@ public class LectureService {
     static final String DEFAULT_SORT = "lid_desc";
 
     private final LectureRepository lectureRepository;
+    private final LectureFileStorage storage;
 
-    public LectureService(LectureRepository lectureRepository) {
+    public LectureService(LectureRepository lectureRepository, LectureFileStorage storage) {
         this.lectureRepository = lectureRepository;
+        this.storage = storage;
     }
 
     public LectureListResponse list(String keyword, String category, String level,
@@ -137,7 +140,10 @@ public class LectureService {
                 .category(lecture.getCategory())
                 .level(lecture.getLevel())
                 .picture(lecture.getPicture())
-                .preview(lecture.getPreview())
+                // 저장 경로가 아니라 재생 API 주소를 준다. 경로를 그대로 주면 그 경로를
+                // 서빙하는 곳이 없어 재생이 안 되고, 서빙하게 만들면 같은 폴더의 본 강의
+                // 영상까지 주소만 알면 받아 갈 수 있게 된다.
+                .preview(lecture.getPreview() == null ? null : "/lectures/" + lid + "/preview")
                 .price(lecture.getPrice())
                 .intro(toIntro(lecture.getSummary()))
                 .instructor(new InstructorPublicResponse(
@@ -163,6 +169,26 @@ public class LectureService {
         return lectureRepository.findEnrollment(currentUser.getUserId(), lid)
                 .map(progress -> enrolled(builder, lid, progress))
                 .orElseGet(() -> builder.viewerState("member").action("purchase").build());
+    }
+
+    /**
+     * GET /lectures/{Lid}/preview — 맛보기 영상 파일.
+     *
+     * 공개 API 다. 로그인하지 않아도 받는다. 대신 상세 조회와 같은 쿼리(findOpenById)로
+     * 공개 여부를 판정한다. 기준을 따로 두면 한쪽만 고쳤을 때 비공개 강의의 맛보기가
+     * 새어 나간다. 없는 강의 · 비공개 강의 · 맛보기 미등록은 모두 404 다.
+     */
+    public StoredFile previewFile(int lid) {
+        if (lid < 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "강의 번호가 올바르지 않습니다.");
+        }
+        LectureDetail lecture = lectureRepository.findOpenById(lid)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "LECTURE_NOT_FOUND", "강의를 찾을 수 없습니다."));
+
+        Path path = storage.resolve(lecture.getPreview(),
+                "PREVIEW_NOT_FOUND", "등록된 맛보기 영상이 없습니다.");
+        return new StoredFile(path, lecture.getName());
     }
 
     private LectureDetailResponse enrolled(LectureDetailResponse.Builder builder,

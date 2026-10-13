@@ -4,11 +4,15 @@ import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.global.exception.ApiException;
 import com.example.sesacedu.student.lecture.dto.AssignmentResponse;
 import com.example.sesacedu.student.lecture.dto.AssignmentSubmitRequest;
+import com.example.sesacedu.student.lecture.dto.CompleteResponse;
 import com.example.sesacedu.student.lecture.dto.CreatedResponse;
 import com.example.sesacedu.student.lecture.dto.LearnResponse;
 import com.example.sesacedu.student.lecture.dto.MaterialResponse;
+import com.example.sesacedu.student.lecture.dto.PositionSaveRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+
+import java.nio.file.Path;
 
 /**
  * 수강 화면(영상 · 자료 · 과제)의 판단을 담당한다.
@@ -22,11 +26,14 @@ public class LectureClassroomService {
 
     private final LectureRepository lectureRepository;
     private final LectureClassroomRepository classroomRepository;
+    private final LectureFileStorage storage;
 
     public LectureClassroomService(LectureRepository lectureRepository,
-                                   LectureClassroomRepository classroomRepository) {
+                                   LectureClassroomRepository classroomRepository,
+                                   LectureFileStorage storage) {
         this.lectureRepository = lectureRepository;
         this.classroomRepository = classroomRepository;
+        this.storage = storage;
     }
 
     /** GET /lectures/{Lid}/learn — 영상 재생 화면. */
@@ -61,6 +68,124 @@ public class LectureClassroomService {
                 : lecture.getMaterialFilename();
 
         return new MaterialResponse(lid, filename, "/lectures/" + lid + "/material/download");
+    }
+
+    /**
+     * 수료로 인정하는 시청 비율. 영상 길이의 90% 지점을 넘기면 수료다.
+     *
+     * 100% 를 요구하지 않는 이유는, 끝부분 인사말까지 봐야 수료가 되면 사실상
+     * 아무도 수료하지 못하고 문의가 쌓인다. 반대로 절반으로 두면 수료가
+     * 의미를 잃는다. 값을 상수로 빼 둔 건 기준이 바뀔 때 한 곳만 고치게 하려는 것이다.
+     */
+    static final double COMPLETE_RATIO = 0.9;
+
+    /**
+     * PUT /lectures/{Lid}/learn/position — 이어보기 위치 저장.
+     *
+     * 재생 중에 주기적으로 불린다. 저장된 위치는 다음 접속 때 learn 응답의
+     * position 으로 내려간다.
+     *
+     * 위치를 영상 길이로 잘라 둔다. 자르지 않으면 길이보다 큰 값이 들어가고,
+     * 그 값으로 수료 판정을 하면 영상을 열어 보지 않고도 수료가 된다.
+     */
+    public void savePosition(int lid, CurrentUser currentUser, PositionSaveRequest request) {
+        Enrolled enrolled = requireEnrolled(lid, currentUser);
+
+        if (request == null || request.getPosition() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "재생 위치를 보내 주세요.");
+        }
+        int position = request.getPosition();
+        if (position < 0) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "재생 위치는 0 이상이어야 합니다.");
+        }
+
+        Integer duration = enrolled.lecture.getDuration();
+        if (duration != null && position > duration) {
+            position = duration;
+        }
+
+        classroomRepository.updatePosition(lid, currentUser.getUserId(), position);
+    }
+
+    /**
+     * POST /lectures/{Lid}/complete — 수료 처리.
+     *
+     * 프론트가 "다 봤다"고 알려 주는 것을 그대로 믿지 않는다. 저장된 position 을
+     * 기준으로 서버가 판단한다. 믿어 버리면 영상을 켜지 않고 이 API 만 불러
+     * 수료증을 받을 수 있다.
+     *
+     * 이미 수료한 건은 409 다. 다시 처리하면 수료 시각이 덮인다.
+     */
+    public CompleteResponse complete(int lid, CurrentUser currentUser) {
+        Enrolled enrolled = requireEnrolled(lid, currentUser);
+        Integer duration = enrolled.lecture.getDuration();
+        Integer position = enrolled.progress.getPosition();
+
+        if (enrolled.progress.isDone()) {
+            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_COMPLETED", "이미 수료한 강의입니다.");
+        }
+
+        // 길이가 없으면 비율을 계산할 수 없다. 이때 조건 없이 수료시키면 이 API 하나만
+        // 불러 수료증을 받을 수 있으므로 거절한다. 강사가 길이를 등록하면 풀린다.
+        if (duration == null || duration <= 0) {
+            throw new ApiException(HttpStatus.CONFLICT, "DURATION_NOT_SET",
+                    "영상 길이가 등록되지 않아 수료를 처리할 수 없습니다.");
+        }
+        int required = (int) Math.ceil(duration * COMPLETE_RATIO);
+
+        int watched = position == null ? 0 : position;
+        if (watched < required) {
+            throw new ApiException(HttpStatus.CONFLICT, "NOT_WATCHED_ENOUGH",
+                    "영상을 끝까지 보셔야 수료로 처리됩니다.");
+        }
+
+        int changed = classroomRepository.markDone(lid, currentUser.getUserId());
+        if (changed == 0) {
+            // 위에서 done 을 확인한 뒤 다른 요청이 먼저 수료 처리한 경우다.
+            // 조건절의 done = 0 이 막아 준 것이므로 같은 응답으로 돌려준다.
+            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_COMPLETED", "이미 수료한 강의입니다.");
+        }
+
+        return new CompleteResponse(lid, true, position, duration, required);
+    }
+
+    /**
+     * GET /lectures/{Lid}/learn/video — 영상 파일 자체를 내려보낸다.
+     *
+     * learn 응답이 가리키는 주소가 바로 여기다. 영상 경로를 응답에 담지 않고
+     * 이 엔드포인트를 두는 이유는, 경로를 내보내면 그 주소를 아는 사람이
+     * 수강을 끊은 뒤에도 계속 받아 갈 수 있기 때문이다. 여기로 받게 하면
+     * 매 요청마다 수강 여부를 다시 확인한다.
+     */
+    public StoredFile videoFile(int lid, CurrentUser currentUser) {
+        ClassroomRow lecture = requireEnrolled(lid, currentUser).lecture;
+
+        Path path = storage.resolve(lecture.getVideo(),
+                "VIDEO_NOT_FOUND", "등록된 강의 영상이 없습니다.");
+
+        // 보여 줄 이름이 없으면 강의명으로 대신한다. material 과 같은 규칙이다.
+        String name = lecture.getVideoFilename() == null
+                ? lecture.getName()
+                : lecture.getVideoFilename();
+        return new StoredFile(path, name);
+    }
+
+    /**
+     * GET /lectures/{Lid}/material/download — 강의 자료 파일 자체를 내려보낸다.
+     *
+     * material 응답의 downloadUrl 이 가리키는 주소다. 영상과 같은 이유로
+     * 경로가 아니라 엔드포인트를 준다.
+     */
+    public StoredFile materialFile(int lid, CurrentUser currentUser) {
+        ClassroomRow lecture = requireEnrolled(lid, currentUser).lecture;
+
+        Path path = storage.resolve(lecture.getMaterial(),
+                "MATERIAL_NOT_FOUND", "등록된 강의 자료가 없습니다.");
+
+        String name = lecture.getMaterialFilename() == null
+                ? lecture.getName()
+                : lecture.getMaterialFilename();
+        return new StoredFile(path, name);
     }
 
     /** GET /lectures/{Lid}/assignment — 과제 안내와 내 제출물. */
@@ -146,8 +271,11 @@ public class LectureClassroomService {
                     "채점이 끝난 제출물은 수정할 수 없습니다.");
         }
 
-        classroomRepository.updateSubmission(lid, currentUser.getUserId(), aid,
-                request.getWork(), request.getWorkFilename(), request.getNote());
+        // 조회와 수정 사이에 강사가 채점했으면 수정 쿼리의 score IS NULL 조건에 걸려 0행이다.
+        if (classroomRepository.updateSubmission(lid, currentUser.getUserId(), aid,
+                request.getWork(), request.getWorkFilename(), request.getNote()) == 0) {
+            throw scoredOrGone(lid, currentUser.getUserId(), aid);
+        }
 
         return toSubmissionResponse(classroomRepository
                 .findMySubmissionById(lid, currentUser.getUserId(), aid)
@@ -174,8 +302,18 @@ public class LectureClassroomService {
         // 지워진 행이 0 이면 내 것이 아니라는 뜻이다. 위에서 이미 걸러지지만
         // 그 사이에 다른 요청이 지웠을 수 있어 한 번 더 본다.
         if (classroomRepository.deleteSubmission(lid, currentUser.getUserId(), aid) == 0) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND", "제출물을 찾을 수 없습니다.");
+            throw scoredOrGone(lid, currentUser.getUserId(), aid);
         }
+    }
+
+    /** 수정·삭제가 0행일 때 이유를 가린다. 그 사이 채점됐으면 409, 사라졌으면 404 다. */
+    private ApiException scoredOrGone(int lid, int userId, int aid) {
+        return classroomRepository.findMySubmissionById(lid, userId, aid)
+                .filter(row -> row.getScore() != null)
+                .map(row -> new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED",
+                        "채점이 끝난 제출물은 바꿀 수 없습니다."))
+                .orElseGet(() -> new ApiException(HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND",
+                        "제출물을 찾을 수 없습니다."));
     }
 
     private void requireAssignmentOpen(ClassroomRow lecture) {

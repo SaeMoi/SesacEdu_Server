@@ -42,9 +42,16 @@ public class LectureBoardService {
         this.boardRepository = boardRepository;
     }
 
-    /** GET /lectures/{Lid}/reviews — 수강평 목록. */
-    public ReviewListResponse reviews(int lid, Integer page, Integer size) {
+    /**
+     * GET /lectures/{Lid}/reviews — 수강평 목록.
+     *
+     * 공개 API 라 currentUser 는 null 일 수 있다. 그때 mine 은 전부 false 다.
+     */
+    public ReviewListResponse reviews(int lid, Integer page, Integer size, CurrentUser currentUser) {
         Paging paging = resolvePaging(lid, page, size);
+
+        // 비로그인은 비교 대상이 없다. 0 은 실제 user_id 로 쓰이지 않는 값이다.
+        int viewerId = currentUser == null ? 0 : currentUser.getUserId();
 
         // 평균 평점은 전체 기준이라 현재 페이지와 무관하게 따로 구한다.
         ReviewSummary summary = lectureRepository.findReviewSummary(lid);
@@ -54,7 +61,7 @@ public class LectureBoardService {
                 ? Collections.emptyList()
                 : boardRepository.findReviews(lid, paging.offset, paging.size).stream()
                 .map(row -> new ReviewListResponse.ReviewItem(
-                        row.getUserId(), row.getNickname(), row.getStar(),
+                        row.getUserId() == viewerId, row.getNickname(), row.getStar(),
                         row.getReview(), row.getCreated()))
                 .collect(Collectors.toList());
 
@@ -63,17 +70,19 @@ public class LectureBoardService {
     }
 
     /** GET /lectures/{Lid}/qna — Q&A 목록. 비밀글은 제목을 가린다. */
-    public QnaListResponse qna(int lid, Integer page, Integer size, CurrentUser currentUser) {
+    public QnaListResponse qna(int lid, Integer page, Integer size, String status,
+                               CurrentUser currentUser) {
         Paging paging = resolvePaging(lid, page, size);
+        String filter = resolveQnaStatus(status);
 
-        int total = boardRepository.countQna(lid);
+        int total = boardRepository.countQna(lid, filter);
         if (total == 0) {
             return new QnaListResponse(Collections.emptyList(), paging.toPageResponse(0));
         }
 
         int instructorUserId = instructorUserId(lid);
 
-        List<QnaListResponse.QnaItem> items = boardRepository.findQna(lid, paging.offset, paging.size)
+        List<QnaListResponse.QnaItem> items = boardRepository.findQna(lid, paging.offset, paging.size, filter)
                 .stream()
                 .map(row -> {
                     boolean accessible = canRead(row, currentUser, instructorUserId);
@@ -110,10 +119,11 @@ public class LectureBoardService {
             throw new ApiException(HttpStatus.FORBIDDEN, "QNA_SECRET", "비밀글은 작성자와 담당 강사만 볼 수 있습니다.");
         }
 
+        boolean mine = currentUser != null && currentUser.getUserId() == row.getUserId();
         return new QnaDetailResponse(
-                row.getQid(), lid, row.getUserId(), row.getNickname(),
+                row.getQid(), lid, mine, row.getNickname(),
                 row.getTitle(), row.getQuestion(), row.getAnswer(),
-                row.getAnsweredBy(), row.getAnsweredAt(), row.isSecret(), row.getCreated());
+                row.getAnsweredAt(), row.isSecret(), row.getCreated());
     }
 
     /**
@@ -125,17 +135,7 @@ public class LectureBoardService {
     public void writeReview(int lid, CurrentUser currentUser, ReviewWriteRequest request) {
         requireEnrolledWriter(lid, currentUser);
 
-        if (request == null || request.getStar() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "평점을 입력해 주세요.");
-        }
-        // DB 는 1~5 를 강제하지 않는다. 여기서 막지 않으면 별 100 개짜리 리뷰가 들어가
-        // 평균이 통째로 망가진다.
-        if (request.getStar() < 1 || request.getStar() > 5) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "평점은 1에서 5 사이여야 합니다.");
-        }
-        if (request.getReview() != null && request.getReview().length() > 2000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "수강평은 2000자까지 쓸 수 있습니다.");
-        }
+        validateReview(request);
 
         // reviews 는 (Lid, user_id) 가 PK 라 1인 1건이다. 미리 보지 않으면
         // PK 위반 오류가 그대로 올라온다.
@@ -145,6 +145,89 @@ public class LectureBoardService {
 
         boardRepository.insertReview(lid, currentUser.getUserId(),
                 request.getStar(), request.getReview());
+    }
+
+    /**
+     * status 파라미터를 정해진 값으로 좁힌다.
+     *
+     * 안 보내면 전체다. 모르는 값은 조용히 무시하지 않고 400 으로 돌려준다.
+     * 무시하면 "미답변만"을 눌렀는데 전체가 나오고, 사용자는 그걸 필터 결과로 읽는다.
+     */
+    private String resolveQnaStatus(String status) {
+        if (status == null || status.trim().isEmpty()) {
+            return null;
+        }
+        String value = status.trim().toLowerCase();
+        // 명세 초안의 all · unanswered 도 받는다. 화면이 어느 쪽으로 짜였든 같은 결과가 나오게 한다.
+        if ("all".equals(value)) {
+            return null;
+        }
+        if ("answered".equals(value)) {
+            return "answered";
+        }
+        if ("waiting".equals(value) || "unanswered".equals(value)) {
+            return "waiting";
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT",
+                "답변 상태는 all · answered · waiting(unanswered) 중 하나입니다.");
+    }
+
+    /**
+     * PUT /lectures/{Lid}/reviews — 내 수강평 수정.
+     *
+     * 리뷰 번호를 경로에 두지 않는다. reviews 의 PK 가 (Lid, user_id) 라서
+     * "이 강의의 내 리뷰"가 애초에 한 건으로 정해지기 때문이다. 번호를 받으면
+     * 남의 번호를 적어 보낼 자리가 생기는데, 그 자리는 만들 필요가 없다.
+     *
+     * 수정할 리뷰가 없으면 404 다. 403 으로 답하면 "있지만 네 것이 아니다"가 되는데,
+     * 애초에 남의 리뷰는 이 경로로 가리킬 수 없으므로 구분할 것이 없다.
+     */
+    public void updateReview(int lid, CurrentUser currentUser, ReviewWriteRequest request) {
+        requireEnrolledWriter(lid, currentUser);
+        validateReview(request);
+
+        int changed = boardRepository.updateReview(lid, currentUser.getUserId(),
+                request.getStar(), request.getReview());
+        if (changed == 0) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "수정할 수강평이 없습니다.");
+        }
+    }
+
+    /**
+     * DELETE /lectures/{Lid}/reviews — 내 수강평 삭제.
+     *
+     * 지운 뒤 다시 쓸 수 있다. 1인 1건 제약은 "한 번만 쓸 수 있다"가 아니라
+     * "동시에 두 건을 둘 수 없다"는 뜻이다.
+     */
+    public void deleteReview(int lid, CurrentUser currentUser) {
+        requireEnrolledWriter(lid, currentUser);
+
+        int removed = boardRepository.deleteReview(lid, currentUser.getUserId());
+        if (removed == 0) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "REVIEW_NOT_FOUND", "삭제할 수강평이 없습니다.");
+        }
+    }
+
+    /**
+     * 수강평 입력 검사. 작성과 수정이 같은 규칙을 쓴다.
+     *
+     * 한 곳에 모아 두는 이유는, 두 벌로 두면 한쪽만 고쳐졌을 때 수정 경로로
+     * 범위 밖 평점이 들어가기 때문이다.
+     */
+    private void validateReview(ReviewWriteRequest request) {
+        // 평점 문제는 INVALID_STAR 로 따로 구분한다. 본문 길이 문제와 같은 코드로
+        // 내보내면 프론트가 어느 입력 칸에 표시할지 알 수 없다.
+        if (request == null || request.getStar() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_STAR", "평점을 입력해 주세요.");
+        }
+        // DB 는 1~5 를 강제하지 않는다. 여기서 막지 않으면 별 100 개짜리 리뷰가 들어가
+        // 평균이 통째로 망가진다.
+        if (request.getStar() < 1 || request.getStar() > 5) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_STAR", "평점은 1에서 5 사이여야 합니다.");
+        }
+        if (request.getReview() != null && request.getReview().length() > 2000) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "수강평은 2000자까지 쓸 수 있습니다.");
+        }
     }
 
     /**

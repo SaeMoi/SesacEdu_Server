@@ -48,7 +48,9 @@ class LectureClassroomControllerTest {
         }
         return MockMvcBuilders
                 .standaloneSetup(new LectureClassroomController(
-                        new LectureClassroomService(lectureRepository, classroomRepository)))
+                        new LectureClassroomService(lectureRepository, classroomRepository,
+                                new LectureFileStorage("./storage")),
+                        new FileResponses()))
                 .setCustomArgumentResolvers(
                         new CurrentUserArgumentResolver(beans.getBeanProvider(AccessTokenVerifier.class)))
                 .setControllerAdvice(new GlobalExceptionHandler())

@@ -115,8 +115,8 @@ class LectureBoardControllerTest {
 
     @Test
     void 비로그인에게는_비밀글_제목이_가려진다() throws Exception {
-        when(boardRepository.countQna(1)).thenReturn(1);
-        when(boardRepository.findQna(1, 0, 10)).thenReturn(List.of(secretQuestion()));
+        when(boardRepository.countQna(1, null)).thenReturn(1);
+        when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(secretQuestion()));
 
         mvcAs(null).perform(get("/lectures/1/qna"))
                 .andExpect(status().isOk())
@@ -129,8 +129,8 @@ class LectureBoardControllerTest {
 
     @Test
     void 작성자_본인에게는_비밀글_제목이_보인다() throws Exception {
-        when(boardRepository.countQna(1)).thenReturn(1);
-        when(boardRepository.findQna(1, 0, 10)).thenReturn(List.of(secretQuestion()));
+        when(boardRepository.countQna(1, null)).thenReturn(1);
+        when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(secretQuestion()));
 
         mvcAs(10).perform(get("/lectures/1/qna").header("Authorization", TOKEN))
                 .andExpect(status().isOk())
@@ -140,8 +140,8 @@ class LectureBoardControllerTest {
 
     @Test
     void 담당_강사에게도_비밀글_제목이_보인다() throws Exception {
-        when(boardRepository.countQna(1)).thenReturn(1);
-        when(boardRepository.findQna(1, 0, 10)).thenReturn(List.of(secretQuestion()));
+        when(boardRepository.countQna(1, null)).thenReturn(1);
+        when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(secretQuestion()));
 
         mvcAs(7).perform(get("/lectures/1/qna").header("Authorization", TOKEN))
                 .andExpect(status().isOk())
@@ -150,8 +150,8 @@ class LectureBoardControllerTest {
 
     @Test
     void 다른_강사에게는_보이지_않는다() throws Exception {
-        when(boardRepository.countQna(1)).thenReturn(1);
-        when(boardRepository.findQna(1, 0, 10)).thenReturn(List.of(secretQuestion()));
+        when(boardRepository.countQna(1, null)).thenReturn(1);
+        when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(secretQuestion()));
 
         // 99 도 강사일 수 있지만 이 강의의 담당은 7 이다.
         // users.auth 로 "강사면 통과" 시키면 이 사람이 남의 강의 비밀글을 읽게 된다.
@@ -165,8 +165,8 @@ class LectureBoardControllerTest {
     void 목록은_답변본문을_내보내지_않는다() throws Exception {
         QnaRow answered = new QnaRow(1, 10, "수강생A", "세션과 토큰의 차이",
                 null, null, 7, WRITTEN, false, WRITTEN);
-        when(boardRepository.countQna(1)).thenReturn(1);
-        when(boardRepository.findQna(1, 0, 10)).thenReturn(List.of(answered));
+        when(boardRepository.countQna(1, null)).thenReturn(1);
+        when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(answered));
 
         mvcAs(null).perform(get("/lectures/1/qna"))
                 .andExpect(status().isOk())

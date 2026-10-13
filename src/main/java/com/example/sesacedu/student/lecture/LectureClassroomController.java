@@ -3,13 +3,17 @@ package com.example.sesacedu.student.lecture;
 import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.student.lecture.dto.AssignmentResponse;
 import com.example.sesacedu.student.lecture.dto.AssignmentSubmitRequest;
+import com.example.sesacedu.student.lecture.dto.CompleteResponse;
 import com.example.sesacedu.student.lecture.dto.CreatedResponse;
 import com.example.sesacedu.student.lecture.dto.LearnResponse;
 import com.example.sesacedu.student.lecture.dto.MaterialResponse;
+import com.example.sesacedu.student.lecture.dto.PositionSaveRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 
 /**
  * 수강 화면 입구. 영상 · 자료 · 과제 세 가지를 받는다.
@@ -33,9 +38,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class LectureClassroomController {
 
     private final LectureClassroomService classroomService;
+    private final FileResponses fileResponses;
 
-    public LectureClassroomController(LectureClassroomService classroomService) {
+    public LectureClassroomController(LectureClassroomService classroomService,
+                                      FileResponses fileResponses) {
         this.classroomService = classroomService;
+        this.fileResponses = fileResponses;
     }
 
     @Operation(summary = "강의 수강",
@@ -54,6 +62,46 @@ public class LectureClassroomController {
     public MaterialResponse material(@PathVariable("lid") int lid,
                                      @Parameter(hidden = true) CurrentUser currentUser) {
         return classroomService.material(lid, currentUser);
+    }
+
+    @Operation(summary = "이어보기 위치 저장",
+            description = "재생 중 주기적으로 호출한다. 영상 길이를 넘는 값은 길이로 잘라 저장한다.")
+    @PutMapping("/learn/position")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void savePosition(@PathVariable("lid") int lid,
+                             @RequestBody PositionSaveRequest request,
+                             @Parameter(hidden = true) CurrentUser currentUser) {
+        classroomService.savePosition(lid, currentUser, request);
+    }
+
+    @Operation(summary = "수료 처리",
+            description = "저장된 이어보기 위치가 영상 길이의 90% 를 넘어야 수료로 처리한다. "
+                    + "프론트가 보낸 값으로 판단하지 않는다. 이미 수료했으면 409 다.")
+    @PostMapping("/complete")
+    public CompleteResponse complete(@PathVariable("lid") int lid,
+                                     @Parameter(hidden = true) CurrentUser currentUser) {
+        return classroomService.complete(lid, currentUser);
+    }
+
+    @Operation(summary = "강의 영상 재생",
+            description = "수강 중인 사람만 받을 수 있다. 구간 요청(Range)을 받으므로 "
+                    + "재생바를 끌어 중간부터 볼 수 있다.")
+    @GetMapping("/learn/video")
+    public ResponseEntity<Resource> video(@PathVariable("lid") int lid,
+                                          @Parameter(hidden = true) CurrentUser currentUser) {
+        StoredFile file = classroomService.videoFile(lid, currentUser);
+
+        // inline 이다. 영상은 받아서 저장하는 게 아니라 그 자리에서 재생하는 것이다.
+        return fileResponses.send(file, false);
+    }
+
+    @Operation(summary = "강의 자료 다운로드",
+            description = "수강 중인 사람만 받을 수 있다. 원본 파일명으로 저장되게 보낸다.")
+    @GetMapping("/material/download")
+    public ResponseEntity<Resource> materialDownload(@PathVariable("lid") int lid,
+                                                     @Parameter(hidden = true) CurrentUser currentUser) {
+        StoredFile file = classroomService.materialFile(lid, currentUser);
+        return fileResponses.send(file, true);
     }
 
     @Operation(summary = "과제 제출",

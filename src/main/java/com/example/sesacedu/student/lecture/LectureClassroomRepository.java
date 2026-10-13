@@ -49,6 +49,35 @@ public class LectureClassroomRepository {
     }
 
     /**
+     * 이어보기 위치를 저장한다. 저장한 행 수를 돌려준다.
+     *
+     * user_id 와 Lid 를 둘 다 조건에 넣는다. Lid 만 쓰면 그 강의를 듣는 모든
+     * 사람의 위치가 한꺼번에 바뀐다.
+     *
+     * 이미 수료한 강의도 위치는 갱신한다. 다시 볼 수 있어야 하고, 수료 여부는
+     * done 이 들고 있으므로 위치가 되돌아가도 수료가 풀리지 않는다.
+     */
+    public int updatePosition(int lid, int userId, int position) {
+        return jdbcTemplate.update(
+                "UPDATE enrollments SET position = ? WHERE user_id = ? AND Lid = ?",
+                position, userId, lid);
+    }
+
+    /**
+     * 수료로 표시한다. 바꾼 행 수를 돌려준다.
+     *
+     * 조건절에 done = 0 을 넣는다. 이미 수료한 건을 다시 수료 처리하면
+     * completed_at 이 나중 시각으로 덮여 "언제 수료했는가"가 사라진다.
+     * 그래서 값이 0 이면 호출한 쪽이 "이미 수료"로 판단할 수 있다.
+     */
+    public int markDone(int lid, int userId) {
+        return jdbcTemplate.update(
+                "UPDATE enrollments SET done = 1, completed_at = CURRENT_TIMESTAMP "
+                        + "WHERE user_id = ? AND Lid = ? AND done = 0",
+                userId, lid);
+    }
+
+    /**
      * 내가 낸 과제 제출물.
      *
      * Lid 와 user_id 를 둘 다 조건에 넣는다. aid 만으로 찾으면 남의 제출물 번호를
@@ -116,14 +145,14 @@ public class LectureClassroomRepository {
         return jdbcTemplate.update(
                 "UPDATE assignments SET work = ?, work_filename = ?, Wnote = ?, "
                         + "submitted = CURRENT_TIMESTAMP, updated = CURRENT_TIMESTAMP "
-                        + "WHERE aid = ? AND Lid = ? AND user_id = ?",
+                        + "WHERE aid = ? AND Lid = ? AND user_id = ? AND score IS NULL",
                 work, workFilename, note, aid, lid, userId);
     }
 
     /** 제출물을 지운다. 지워진 행 수를 돌려준다. 소유자 조건이 걸려 있다. */
     public int deleteSubmission(int lid, int userId, int aid) {
         return jdbcTemplate.update(
-                "DELETE FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ?",
+                "DELETE FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ? AND score IS NULL",
                 aid, lid, userId);
     }
 

@@ -16,28 +16,26 @@ public class QnaDetailResponse {
 
     private final int qid;
     private final int lectureId;
-    private final int userId;
+    private final boolean mine;
     private final String nickname;
     private final String title;
     private final String question;
     private final String answer;
-    private final Integer answeredBy;
     private final LocalDateTime answeredAt;
     private final boolean secret;
     private final LocalDateTime created;
 
-    public QnaDetailResponse(int qid, int lectureId, int userId, String nickname,
+    public QnaDetailResponse(int qid, int lectureId, boolean mine, String nickname,
                              String title, String question, String answer,
-                             Integer answeredBy, LocalDateTime answeredAt,
+                             LocalDateTime answeredAt,
                              boolean secret, LocalDateTime created) {
         this.qid = qid;
         this.lectureId = lectureId;
-        this.userId = userId;
+        this.mine = mine;
         this.nickname = nickname;
         this.title = title;
         this.question = question;
         this.answer = answer;
-        this.answeredBy = answeredBy;
         this.answeredAt = answeredAt;
         this.secret = secret;
         this.created = created;
@@ -51,9 +49,14 @@ public class QnaDetailResponse {
         return lectureId;
     }
 
-    /** 질문자. 수정·삭제 버튼을 보여 줄지 판단하는 데 쓴다. */
-    public int getUserId() {
-        return userId;
+    /**
+     * 로그인한 사람이 쓴 질문이면 true. 수정·삭제 버튼을 보여 줄지 판단하는 데 쓴다.
+     *
+     * 사용자 번호를 그대로 주지 않는다. 비로그인도 읽는 공개 글이라 번호를 주면
+     * 질문 번호만 훑어서 닉네임과 user_id 를 짝지은 표를 만들 수 있다. 수강평과 같은 규칙이다.
+     */
+    public boolean isMine() {
+        return mine;
     }
 
     public String getNickname() {
@@ -72,11 +75,6 @@ public class QnaDetailResponse {
     /** 답변 본문. 답변 전이면 생략된다. */
     public String getAnswer() {
         return answer;
-    }
-
-    /** 답변한 강사의 user_id. 답변 전이면 생략된다. */
-    public Integer getAnsweredBy() {
-        return answeredBy;
     }
 
     public LocalDateTime getAnsweredAt() {

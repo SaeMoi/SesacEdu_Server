@@ -37,7 +37,7 @@ class LectureServiceTest {
 
     @BeforeEach
     void setUp() {
-        lectureService = new LectureService(lectureRepository);
+        lectureService = new LectureService(lectureRepository, new LectureFileStorage("./storage"));
     }
 
     @Test
