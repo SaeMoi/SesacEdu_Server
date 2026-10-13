@@ -74,9 +74,9 @@ public class LectureRepository {
         }
         StringBuilder sql = new StringBuilder(
                 "SELECT l.Lid AS lid, l.name, l.headline, l.picture, i.iname AS instructor, "
-                        // LEVEL 은 Oracle 이 계층 질의에 쓰는 이름이라 그냥 쓰면 충돌한다.
-                        // 큰따옴표로 감싸 컬럼명임을 분명히 한다. 자바 문자열 안이라 \" 가 된다.
-                        + "l.category, l.\"LEVEL\" AS level_value, l.Lprice AS price, "
+                        // 난이도 컬럼은 Llevel 이다. level 로 두면 Oracle 이 계층 질의
+                        // 가상컬럼으로 해석해 ORA-01788 이 난다. Lid·Lprice 와 같은 L 접두 규칙이다.
+                        + "l.category, l.Llevel AS level_value, l.Lprice AS price, "
                         // 평점은 reviews 를 미리 묶어 둔 결과와 LEFT JOIN 한다. 리뷰가 없는
                         // 강의도 목록에서 빠지지 않아야 하므로 INNER JOIN 을 쓰지 않는다.
                         + "r.rating, NVL(r.review_count, 0) AS review_count "
@@ -98,7 +98,7 @@ public class LectureRepository {
 
     public Optional<LectureDetail> findOpenById(int lid) {
         String sql = "SELECT l.Lid AS lid, l.user_id AS instructor_user_id, l.name, l.headline, l.summary, "
-                + "l.category, l.\"LEVEL\" AS level_value, l.picture, l.preview, l.Lprice AS price, "
+                + "l.category, l.Llevel AS level_value, l.picture, l.preview, l.Lprice AS price, "
                 + "i.iname, i.bio, i.field, i.career "
                 + "FROM lectures l "
                 + "LEFT JOIN instructors i ON i.user_id = l.user_id "
@@ -190,7 +190,7 @@ public class LectureRepository {
             params.add(category);
         }
         if (level != null) {
-            sql.append(" AND l.\"LEVEL\" = ?");
+            sql.append(" AND l.Llevel = ?");
             params.add(level);
         }
     }
