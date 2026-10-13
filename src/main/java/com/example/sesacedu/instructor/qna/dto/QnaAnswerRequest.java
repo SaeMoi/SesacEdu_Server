@@ -3,11 +3,11 @@ package com.example.sesacedu.instructor.qna.dto;
 /**
  * 답변 저장(PUT) 요청 바디.
  */
-public class AnswerSaveRequest {
+public class QnaAnswerRequest {
 
     private String answer;  // 답변 내용
 
-    public AnswerSaveRequest() {
+    public QnaAnswerRequest() {
     }
 
     public String getAnswer() { return answer; }
