@@ -8,9 +8,15 @@ spring:
     password: ${DB_PASSWORD}
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
+      max-file-size: 200MB
+      max-request-size: 200MB
 
 springdoc:
   swagger-ui:
     path: /swagger
+
+app:
+  security:
+    jwt:
+      # POST /test/jwt (테스트용 JWT 발급 API) 사용 여부. 배포 시 false 로 바꿀 것.
+      test-api-enabled: true
