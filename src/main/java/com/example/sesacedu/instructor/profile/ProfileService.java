@@ -1,26 +1,30 @@
 package com.example.sesacedu.instructor.profile;
 
+import com.example.sesacedu.global.storage.FileStorage;
 import com.example.sesacedu.instructor.profile.dto.ProfileDto;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * 강사 정보 관리 로직. 본인(instructors 행)을 조회/수정한다.
- * 승인된 강사(auth=2)만 접근할 수 있다. 신청 대기(4)·그 외는 막는다.
+ * 승인 강사 여부는 컨트롤러의 JWT role("INSTRUCTOR")로 확인 → 여기선 행 존재(404)만 다룬다.
+ * 경력 파일은 FileStorage 로 저장(로컬/S3 교체 가능).
  */
 @Service
 public class ProfileService {
 
-    private static final int AUTH_INSTRUCTOR = 2;   // 승인된 강사만 접근 허용
+    private static final String CAREER_DIR = "instructor/career";
 
     private final ProfileRepository profileRepository;
+    private final FileStorage fileStorage;
 
-    public ProfileService(ProfileRepository profileRepository) {
+    public ProfileService(ProfileRepository profileRepository, FileStorage fileStorage) {
         this.profileRepository = profileRepository;
+        this.fileStorage = fileStorage;
     }
 
-    /** 조회. 강사 아님(승인 대기/일반 등)이면 접근 차단. */
-    public ProfileDto getProfile(int userId) {
-        checkInstructor(userId);
+    /** 조회. instructors 행 없으면 404. */
+    public ProfileDto getProfile(long userId) {
         ProfileDto p = profileRepository.findByUserId(userId);
         if (p == null) {
             throw new InstructorNotFound();
@@ -28,35 +32,22 @@ public class ProfileService {
         return p;
     }
 
-    /** 수정. 강사 아님이면 접근 차단. */
-    public void updateProfile(int userId, ProfileDto req) {
-        checkInstructor(userId);
+    /**
+     * 수정. 텍스트는 항상 갱신, 파일(file)이 있으면 저장 후 career_file·career_filename 갱신.
+     * 대상 행 없으면 404.
+     */
+    public void updateProfile(long userId, ProfileDto req, MultipartFile file) {
         int updated = profileRepository.update(userId, req);
         if (updated == 0) {
             throw new InstructorNotFound();
         }
-    }
-
-    /**
-     * 승인된 강사(auth=2)인지 확인.
-     * 사용자 없음 -> InstructorNotFound(404)
-     * 승인 대기(4)·일반(0,1)·관리자(3) -> NotInstructor(403)
-     */
-    private void checkInstructor(int userId) {
-        Integer auth = profileRepository.findAuthByUserId(userId);
-        if (auth == null) {
-            throw new InstructorNotFound();
-        }
-        if (auth != AUTH_INSTRUCTOR) {
-            throw new NotInstructor();
+        if (file != null && !file.isEmpty()) {
+            String key = fileStorage.store(file, CAREER_DIR);          // 로컬/S3 저장 → 키
+            profileRepository.updateCareerFile(userId, key, file.getOriginalFilename());
         }
     }
 
     /** 강사 정보 없음 (404) */
     public static class InstructorNotFound extends RuntimeException {
-    }
-
-    /** 승인된 강사가 아니라 접근 불가 (403) — 신청 대기 포함 */
-    public static class NotInstructor extends RuntimeException {
     }
 }
