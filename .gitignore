@@ -40,3 +40,6 @@ out/
 
 ### Cursor ###
 .cursor/
+
+# 접속 정보. 커밋하지 않는다
+.env.rds
