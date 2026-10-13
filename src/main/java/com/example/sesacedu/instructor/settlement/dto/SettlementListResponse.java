@@ -3,23 +3,34 @@ package com.example.sesacedu.instructor.settlement.dto;
 import java.util.List;
 
 /**
- * 정산 목록 조회 응답. 상단 요약 + 월별 정산 리스트.
+ * 정산 목록 응답.
+ * 상단 요약(totalRevenue/upcomingAmount/latestStatus)은 가장 최근 정산 1건 기준 — 페이지와 무관.
+ * settlements 목록은 페이지당 5개 고정.
  */
 public class SettlementListResponse {
 
-    private long totalRevenue;    // 총 매출 (전체 정산 revenue 합)
-    private long upcomingAmount;  // 정산 예정액 (requested 상태 amount 합)
-    private String latestStatus;  // 최신 정산 상태
-    private List<Item> settlements;
+    private long totalRevenue;    // 최근 정산 매출 (gross)
+    private long upcomingAmount;  // 최근 정산 금액 (net)
+    private String latestStatus;  // 최근 정산 상태
+    private int page;
+    private int size;
+    private long totalElements;
+    private int totalPages;
+    private List<SettlementListItem> settlements;
 
     public SettlementListResponse() {
     }
 
-    public SettlementListResponse(long totalRevenue, long upcomingAmount,
-                                  String latestStatus, List<Item> settlements) {
+    public SettlementListResponse(long totalRevenue, long upcomingAmount, String latestStatus,
+                                  int page, int size, long totalElements, int totalPages,
+                                  List<SettlementListItem> settlements) {
         this.totalRevenue = totalRevenue;
         this.upcomingAmount = upcomingAmount;
         this.latestStatus = latestStatus;
+        this.page = page;
+        this.size = size;
+        this.totalElements = totalElements;
+        this.totalPages = totalPages;
         this.settlements = settlements;
     }
 
@@ -32,36 +43,18 @@ public class SettlementListResponse {
     public String getLatestStatus() { return latestStatus; }
     public void setLatestStatus(String latestStatus) { this.latestStatus = latestStatus; }
 
-    public List<Item> getSettlements() { return settlements; }
-    public void setSettlements(List<Item> settlements) { this.settlements = settlements; }
+    public int getPage() { return page; }
+    public void setPage(int page) { this.page = page; }
 
-    /** 월별 정산 한 행 */
-    public static class Item {
-        private int sid;
-        private String period;
-        private long amount;
-        private String status;
+    public int getSize() { return size; }
+    public void setSize(int size) { this.size = size; }
 
-        public Item() {
-        }
+    public long getTotalElements() { return totalElements; }
+    public void setTotalElements(long totalElements) { this.totalElements = totalElements; }
 
-        public Item(int sid, String period, long amount, String status) {
-            this.sid = sid;
-            this.period = period;
-            this.amount = amount;
-            this.status = status;
-        }
+    public int getTotalPages() { return totalPages; }
+    public void setTotalPages(int totalPages) { this.totalPages = totalPages; }
 
-        public int getSid() { return sid; }
-        public void setSid(int sid) { this.sid = sid; }
-
-        public String getPeriod() { return period; }
-        public void setPeriod(String period) { this.period = period; }
-
-        public long getAmount() { return amount; }
-        public void setAmount(long amount) { this.amount = amount; }
-
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-    }
+    public List<SettlementListItem> getSettlements() { return settlements; }
+    public void setSettlements(List<SettlementListItem> settlements) { this.settlements = settlements; }
 }

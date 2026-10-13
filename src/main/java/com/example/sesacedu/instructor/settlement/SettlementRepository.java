@@ -1,17 +1,21 @@
 package com.example.sesacedu.instructor.settlement;
 
-import com.example.sesacedu.instructor.settlement.dto.SettlementDetail;
-import com.example.sesacedu.instructor.settlement.dto.SettlementListResponse;
+import com.example.sesacedu.instructor.settlement.dto.SettlementListItem;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.sql.Timestamp;
+import java.time.YearMonth;
 import java.util.List;
 
 /**
- * 정산 JDBC.
- * 월 합계는 settlements 저장값, 강의별 매출은 order_items 집계로 구한다.
+ * 강사 정산 JDBC. (확정 DDL 기준)
+ *   목록/헤더 : settlements 테이블 (user_id = 강사)
+ *   강의별 내역 : order_items + orders + lectures 에서 기간별 매출 집계
+ *     - 가정 1) status='paid' 주문만 매출로 집계
+ *     - 가정 2) 정산 기간 = 전월 21일 00:00 ~ 당월 21일 00:00(미포함) → 당월 20일까지 포함
  */
 @Repository
 public class SettlementRepository {
@@ -22,117 +26,130 @@ public class SettlementRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // ---------------- 목록 ----------------
+    /** period("2026-10") → [전월 21일 00:00, 당월 21일 00:00) 정산 주기 구간 */
+    private static Timestamp[] cycleWindow(String period) {
+        YearMonth ym = YearMonth.parse(period);                                           // 2026-10
+        Timestamp start = Timestamp.valueOf(ym.minusMonths(1).atDay(21).atStartOfDay());  // 2026-09-21 00:00
+        Timestamp end   = Timestamp.valueOf(ym.atDay(21).atStartOfDay());                 // 2026-10-21 00:00 (미포함)
+        return new Timestamp[]{ start, end };
+    }
 
-    private static final RowMapper<SettlementListResponse.Item> LIST_MAPPER = (rs, n) ->
-            new SettlementListResponse.Item(
+    // ---------------- 목록 ----------------
+    private static final RowMapper<SettlementListItem> LIST_MAPPER = (rs, n) ->
+            new SettlementListItem(
                     rs.getInt("sid"),
                     rs.getString("period"),
                     rs.getLong("amount"),
                     rs.getString("status"));
 
-    /** 강사의 월별 정산 목록 (최신순). */
-    public List<SettlementListResponse.Item> findList(int instructorUserId) {
+    public List<SettlementListItem> findSettlements(long instructorUserId, int offset, int size) {
         return jdbcTemplate.query(
                 "SELECT sid, period, amount, status FROM settlements " +
-                        "WHERE user_id = ? ORDER BY period DESC",
-                LIST_MAPPER, instructorUserId);
+                        "WHERE user_id = ? ORDER BY period DESC " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                LIST_MAPPER, instructorUserId, offset, size);
     }
 
-    /** 전체 매출 합계 (요약용). 없으면 0. */
-    public long sumRevenue(int instructorUserId) {
-        Long v = jdbcTemplate.queryForObject(
-                "SELECT NVL(SUM(revenue), 0) FROM settlements WHERE user_id = ?",
-                Long.class, instructorUserId);
-        return v == null ? 0 : v;
+    public int countSettlements(long instructorUserId) {
+        Integer c = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM settlements WHERE user_id = ?", Integer.class, instructorUserId);
+        return c == null ? 0 : c;
     }
 
-    /** 정산 예정액 = requested 상태 amount 합. 없으면 0. */
-    public long sumUpcoming(int instructorUserId) {
-        Long v = jdbcTemplate.queryForObject(
-                "SELECT NVL(SUM(amount), 0) FROM settlements " +
-                        "WHERE user_id = ? AND status = 'requested'",
-                Long.class, instructorUserId);
-        return v == null ? 0 : v;
-    }
-
-    /** 최신 정산 상태 (period 최신). 없으면 null. */
-    public String findLatestStatus(int instructorUserId) {
+    // 요약: 가장 최근(period 내림차순 1건)의 revenue/amount/status
+    public Summary findLatestSummary(long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT status FROM settlements WHERE user_id = ? " +
-                            "ORDER BY period DESC FETCH FIRST 1 ROWS ONLY",
-                    String.class, instructorUserId);
+                    "SELECT revenue, amount, status FROM settlements " +
+                            "WHERE user_id = ? ORDER BY period DESC FETCH NEXT 1 ROWS ONLY",
+                    (rs, n) -> new Summary(rs.getLong("revenue"), rs.getLong("amount"), rs.getString("status")),
+                    instructorUserId);
+        } catch (EmptyResultDataAccessException e) {
+            return new Summary(0, 0, null);
+        }
+    }
+
+    public static class Summary {
+        public final long totalRevenue;
+        public final long upcomingAmount;
+        public final String latestStatus;
+        public Summary(long totalRevenue, long upcomingAmount, String latestStatus) {
+            this.totalRevenue = totalRevenue;
+            this.upcomingAmount = upcomingAmount;
+            this.latestStatus = latestStatus;
+        }
+    }
+
+    // ---------------- 상세 헤더 ----------------
+    public SettlementHeader findHeader(int sid, long instructorUserId) {
+        try {
+            return jdbcTemplate.queryForObject(
+                    "SELECT sid, period, status, amount, bank, account, paid_at " +
+                            "FROM settlements WHERE sid = ? AND user_id = ?",
+                    (rs, n) -> {
+                        SettlementHeader h = new SettlementHeader();
+                        h.sid = rs.getInt("sid");
+                        h.period = rs.getString("period");
+                        h.status = rs.getString("status");
+                        h.totalAmount = rs.getLong("amount");
+                        h.bank = rs.getString("bank");
+                        h.account = rs.getString("account");
+                        h.payDate = rs.getTimestamp("paid_at") == null ? null
+                                : rs.getTimestamp("paid_at").toLocalDateTime().toLocalDate().toString();
+                        return h;
+                    }, sid, instructorUserId);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    // ---------------- 상세 ----------------
+    public static class SettlementHeader {
+        public int sid;
+        public String period;
+        public String status;
+        public long totalAmount;
+        public String bank;
+        public String account;
+        public String payDate;
+    }
 
-    private static final RowMapper<SettlementDetail> DETAIL_MAPPER = (rs, n) -> {
-        SettlementDetail d = new SettlementDetail();
-        d.setSid(rs.getInt("sid"));
-        d.setPeriod(rs.getString("period"));
-        d.setStatus(rs.getString("status"));
-        d.setRevenue(rs.getLong("revenue"));
-        d.setDeduction(rs.getLong("deduction"));
-        d.setAmount(rs.getLong("amount"));
-        d.setBank(rs.getString("bank"));
-        d.setAccount(rs.getString("account"));
-        return d;
-    };
-
-    /**
-     * 정산 상세(월 합계 + 지급 계좌). 본인(instructorUserId) 정산만 조회.
-     * @return 없거나 본인 것 아니면 null
-     */
-    public SettlementDetail findDetail(int sid, int instructorUserId) {
-        try {
-            return jdbcTemplate.queryForObject(
-                    "SELECT s.sid, s.period, s.status, s.revenue, s.deduction, s.amount, " +
-                            "       i.bank, i.account " +
-                            "FROM settlements s " +
-                            "JOIN instructors i ON s.user_id = i.user_id " +
-                            "WHERE s.sid = ? AND s.user_id = ?",
-                    DETAIL_MAPPER, sid, instructorUserId);
-        } catch (EmptyResultDataAccessException e) {
-            return null;
+    // ---------------- 상세: 강의별 매출 (정산 주기 내 paid 주문 합계) ----------------
+    public static class LectureRevenue {
+        public final String lectureName;
+        public final long revenue;
+        public LectureRevenue(String lectureName, long revenue) {
+            this.lectureName = lectureName;
+            this.revenue = revenue;
         }
     }
 
-    /**
-     * 강사의 강의별 매출 집계 — 특정 정산월(period)에 결제 완료된 주문만.
-     *
-     * 정산 기간 규칙: period 가 'YYYY.MM' 이면 그 정산월의 집계 대상은
-     *   (전월 21일 00:00) ~ (당월 21일 00:00) 직전,  즉 전월 21일 ~ 당월 20일.
-     * 예) period=2026.10  ->  2026-09-21 00:00 <= created < 2026-10-21 00:00
-     *
-     * period 문자열에서 당월 1일 DATE 를 만든 뒤:
-     *   시작 = 당월1일 - 10일   (= 전월 21일)
-     *   끝   = 다음달1일 - 10일  (= 당월 21일, 미만 비교)
-     * order_items 를 강의명으로 묶어 price 합을 구한다.
-     *
-     * @return [강의명, 매출]만 채워진 Item 목록
-     */
-    public List<SettlementDetail.Item> findRevenueByLecture(int instructorUserId, String period) {
+    public List<LectureRevenue> findLectureRevenue(long instructorUserId, String period, int offset, int size) {
+        Timestamp[] w = cycleWindow(period);
         return jdbcTemplate.query(
-                "SELECT oi.lname AS lecture_name, SUM(oi.price) AS revenue " +
+                "SELECT l.name AS lecture_name, SUM(oi.price) AS revenue " +
                         "FROM order_items oi " +
-                        "JOIN orders o ON oi.oid = o.oid " +
+                        "JOIN orders o   ON oi.oid = o.oid " +
                         "JOIN lectures l ON oi.lid = l.lid " +
-                        "WHERE l.user_id = ? " +
-                        "  AND o.status = 'paid' " +
-                        // 당월 1일 (period 'YYYY.MM' -> DATE)
-                        "  AND o.created >= (TO_DATE(? || '.01', 'YYYY.MM.DD') - 10) " +        // 전월 21일
-                        "  AND o.created <  (ADD_MONTHS(TO_DATE(? || '.01', 'YYYY.MM.DD'), 1) - 10) " + // 당월 21일 미만
-                        "GROUP BY oi.lname ORDER BY revenue DESC",
-                (rs, n) -> {
-                    SettlementDetail.Item item = new SettlementDetail.Item();
-                    item.setLectureName(rs.getString("lecture_name"));
-                    item.setRevenue(rs.getLong("revenue"));
-                    return item;   // deduction/amount 는 서비스에서 계산
-                },
-                instructorUserId, period, period);
+                        "WHERE l.user_id = ? AND o.status = 'paid' " +
+                        "  AND o.paid_at >= ? AND o.paid_at < ? " +   // 전월 21일 ~ 당월 21일(미포함)
+                        "GROUP BY l.lid, l.name " +
+                        "ORDER BY revenue DESC " +
+                        "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                (rs, n) -> new LectureRevenue(rs.getString("lecture_name"), rs.getLong("revenue")),
+                instructorUserId, w[0], w[1], offset, size);
+    }
+
+    public int countLectureRevenue(long instructorUserId, String period) {
+        Timestamp[] w = cycleWindow(period);
+        Integer c = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM (" +
+                        "  SELECT l.lid FROM order_items oi " +
+                        "  JOIN orders o   ON oi.oid = o.oid " +
+                        "  JOIN lectures l ON oi.lid = l.lid " +
+                        "  WHERE l.user_id = ? AND o.status = 'paid' " +
+                        "    AND o.paid_at >= ? AND o.paid_at < ? " +
+                        "  GROUP BY l.lid)",
+                Integer.class, instructorUserId, w[0], w[1]);
+        return c == null ? 0 : c;
     }
 }
