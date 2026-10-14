@@ -19,7 +19,7 @@ import java.util.Optional;
 /**
  * 강의 조회의 SQL. JdbcTemplate 으로 SQL 을 직접 쓴다.
  */
-@Repository
+@Repository("studentLectureRepository")
 public class LectureRepository {
 
     // 조회 결과 한 줄(ResultSet)을 LectureCard 객체 하나로 바꾸는 규칙.

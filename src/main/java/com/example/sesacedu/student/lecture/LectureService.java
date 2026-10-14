@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * 들어온 값이 쓸 수 있는 값인지 검사하고, 기본값을 채우고, 응답에 무엇을 담을지 정한다.
  * SQL 은 직접 쓰지 않고 Repository 에 맡긴다.
  */
-@Service
+@Service("studentLectureService")
 public class LectureService {
 
     static final int DEFAULT_PAGE = 1;

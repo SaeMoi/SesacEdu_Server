@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
  * @Controller 와 다르다.
  */
 @Tag(name = "강의")
-@RestController
+@RestController("studentLectureController")
 @RequestMapping("/lectures")   // 이 클래스의 모든 주소가 /lectures 로 시작한다
 public class LectureController {
 
