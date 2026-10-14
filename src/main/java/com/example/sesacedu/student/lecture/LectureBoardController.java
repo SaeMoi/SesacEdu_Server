@@ -105,7 +105,7 @@ public class LectureBoardController {
     }
 
     @Operation(summary = "강의 Q&A 상세",
-            description = "비밀글은 작성자와 담당 강사만 볼 수 있다. 그 외에는 403 이다.")
+            description = "비밀글은 작성자와 담당 강사만 볼 수 있다. 비로그인은 401, 그 외에는 403 이다.")
     @GetMapping("/qna/{qnaid}")
     public QnaDetailResponse qnaDetail(@PathVariable("lid") int lid,
                                        @PathVariable("qnaid") int qnaid,

@@ -190,6 +190,31 @@ class LectureBoardControllerTest {
     }
 
     @Test
+    void 비밀글_상세는_담당_강사도_연다() throws Exception {
+        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
+
+        mvcAs(7).perform(get("/lectures/1/qna/2").header("Authorization", TOKEN))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void 비밀글_상세는_다른_수강생이면_403이다() throws Exception {
+        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
+
+        mvcAs(11).perform(get("/lectures/1/qna/2").header("Authorization", TOKEN))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("SECRET_QNA"));
+    }
+
+    @Test
+    void 비밀글_상세는_비로그인이면_401이다() throws Exception {
+        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
+
+        mvcAs(null).perform(get("/lectures/1/qna/2"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void 다른_강의의_질문번호로는_열리지_않는다() throws Exception {
         // 강의 1 에 질문 2 는 있지만, 강의 1 로 조회하면서 다른 강의의 질문 번호를 넣은 경우다.
         when(boardRepository.findQnaDetail(1, 777)).thenReturn(Optional.empty());

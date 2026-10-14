@@ -98,6 +98,17 @@ public class LectureBoardService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "QNA_NOT_FOUND", "질문을 찾을 수 없습니다."));
 
+        // 비밀글은 작성자와 담당 강사만 본다.
+        if (row.isSecret()) {
+            if (currentUser == null) {
+                throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다.");
+            }
+            int instructorUserId = boardRepository.findInstructorUserId(lid).orElse(-1);
+            if (currentUser.getUserId() != row.getUserId() && currentUser.getUserId() != instructorUserId) {
+                throw new ApiException(HttpStatus.FORBIDDEN, "SECRET_QNA", "비밀글은 작성자와 강사만 볼 수 있습니다.");
+            }
+        }
+
         return new QnaDetailResponse(
                 row.getQid(), lid, row.getUserId(), row.getNickname(),
                 row.getTitle(), row.getQuestion(), row.getAnswer(),
