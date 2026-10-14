@@ -42,7 +42,7 @@ public class LectureBoardController {
 
     @Operation(summary = "강의 리뷰",
             description = "공개 API. 평균 평점과 전체 건수를 함께 준다. 작성자는 닉네임만 나온다. "
-                    + "로그인한 경우 자기 글에 mine=true 가 붙는다.")
+)
     @GetMapping("/reviews")
     public ReviewListResponse reviews(@PathVariable("lid") int lid,
                                       @RequestParam(required = false) Integer page,

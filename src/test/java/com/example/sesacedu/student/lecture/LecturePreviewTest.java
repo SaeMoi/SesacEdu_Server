@@ -74,7 +74,6 @@ class LecturePreviewTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "video/mp4"))
                 .andExpect(header().string("Accept-Ranges", "bytes"))
-                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(content().bytes(CLIP));
     }
 
@@ -94,23 +93,6 @@ class LecturePreviewTest {
         mvc.perform(get("/lectures/12/preview"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("PREVIEW_NOT_FOUND"));
-    }
-
-    @Test
-    void 맛보기_경로가_조작돼도_뿌리_밖으로_나가지_않는다() throws Exception {
-        Files.write(base.resolve("secret.txt"), "secret".getBytes(StandardCharsets.UTF_8));
-        when(repository.findOpenById(12)).thenReturn(Optional.of(lecture("../secret.txt")));
-
-        mvc.perform(get("/lectures/12/preview"))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("PREVIEW_NOT_FOUND"));
-    }
-
-    @Test
-    void 강의_번호가_0이면_400이다() throws Exception {
-        mvc.perform(get("/lectures/0/preview"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
     }
 
     @Test

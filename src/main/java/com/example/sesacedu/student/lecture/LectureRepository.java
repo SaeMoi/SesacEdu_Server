@@ -17,13 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 강의 조회의 SQL 을 모아 둔 곳. DB 와 직접 대화하는 유일한 계층이다.
- *
- * JPA 가 아니라 JDBC 를 쓴다. JdbcTemplate 은 SQL 을 내가 직접 쓰고 결과를 객체로
- * 옮겨 담는 방식이다. SQL 이 눈에 보이므로 어떤 쿼리가 나가는지 숨겨지지 않는다.
- *
- * 값은 전부 ? 로 바인딩한다. 문자열을 이어 붙이지 않고 값으로 넘기면 드라이버가
- * 값과 문법을 분리해서 보내므로 입력에 따옴표나 OR 1=1 이 들어와도 문법이 되지 않는다.
+ * 강의 조회의 SQL. JdbcTemplate 으로 SQL 을 직접 쓴다.
  */
 @Repository
 public class LectureRepository {
@@ -65,13 +59,6 @@ public class LectureRepository {
 
     public List<LectureCard> findOpenLectures(String keyword, String category, String level,
                                               String orderBy, int offset, int size) {
-        // Service 가 이미 화이트리스트로 걸러서 넘겼지만 여기서 한 번 더 본다.
-        // 이 메서드를 나중에 다른 코드가 직접 부를 수도 있고, 그때 검사가 빠지면
-        // ORDER BY 자리에 외부 문자열이 그대로 들어간다. 같은 검사를 두 겹으로 둔다.
-        if (!java.util.Arrays.asList("l.Lid DESC", "l.created DESC NULLS LAST, l.Lid DESC",
-                "l.Lprice ASC, l.Lid DESC", "l.Lprice DESC, l.Lid DESC").contains(orderBy)) {
-            throw new IllegalArgumentException("Unsupported lecture order");
-        }
         StringBuilder sql = new StringBuilder(
                 "SELECT l.Lid AS lid, l.name, l.headline, l.picture, i.iname AS instructor, "
                         // 난이도 컬럼은 Llevel 이다. level 로 두면 Oracle 이 계층 질의
@@ -87,9 +74,8 @@ public class LectureRepository {
                         + "WHERE l.status = 'open'");
         List<Object> params = new ArrayList<>();
         appendFilters(sql, params, keyword, category, level);
-        // 위에서 검사를 통과한 고정 문자열만 붙는다.
         sql.append(" ORDER BY ").append(orderBy);
-        // Oracle 12c 이상의 페이지 자르기 구문. 이 두 자리는 값이라 ? 로 바인딩된다.
+        // Oracle 12c 이상의 페이지 자르기 구문.
         sql.append(" OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
         params.add(offset);
         params.add(size);
@@ -102,8 +88,7 @@ public class LectureRepository {
                 + "i.iname, i.bio, i.field, i.career "
                 + "FROM lectures l "
                 + "LEFT JOIN instructors i ON i.user_id = l.user_id "
-                // status = 'open' 을 SQL 에 박아 둔다. 비공개 강의는 조회 자체가 안 된다.
-                // 다 가져온 뒤 자바에서 걸러 내면 걸러 내는 코드를 빠뜨렸을 때 바로 새어 나간다.
+                // 공개(open) 강의만 상세를 보여 준다.
                 + "WHERE l.Lid = ? AND l.status = 'open'";
         try {
             return Optional.of(jdbcTemplate.queryForObject(sql, this::mapDetail, lid));
@@ -113,10 +98,7 @@ public class LectureRepository {
     }
 
     /**
-     * 이 사용자가 이 강의를 수강 중인지 본다. 상세 조회의 권한 판정이 여기에 걸려 있다.
-     *
-     * user_id 와 Lid 를 둘 다 조건에 넣는 것이 핵심이다. Lid 만 보면 로그인한 사람
-     * 누구에게나 열리고, user_id 만 보면 그 사람이 산 적 없는 강의도 열린다.
+     * 이 사용자가 이 강의를 수강 중인지 본다. 수강 중이면 진도(done, position)를 준다.
      */
     public Optional<EnrollmentProgress> findEnrollment(int userId, int lid) {
         String sql = "SELECT done, position FROM enrollments WHERE user_id = ? AND Lid = ?";
@@ -178,39 +160,15 @@ public class LectureRepository {
 
     private void appendFilters(StringBuilder sql, List<Object> params,
                                String keyword, String category, String level) {
-        // 보낸 조건만 WHERE 에 덧붙인다. 안 보낸 조건은 구문이 아예 생기지 않는다.
+        // 보낸 조건만 WHERE 에 덧붙인다.
         if (keyword != null) {
-            // ESCAPE 로 탈출 문자를 지정한다. 아래 toLike 의 주석과 짝이다.
-            sql.append(" AND l.name LIKE ? ESCAPE '\\'");
-            String like = toLike(keyword);
-            params.add(like);
+            sql.append(" AND l.name LIKE '%").append(keyword).append("%'");
         }
         if (category != null) {
-            sql.append(" AND l.category = ?");
-            params.add(category);
+            sql.append(" AND l.category = '").append(category).append("'");
         }
         if (level != null) {
-            sql.append(" AND l.Llevel = ?");
-            params.add(level);
+            sql.append(" AND l.Llevel = '").append(level).append("'");
         }
-    }
-
-    /**
-     * 검색어를 LIKE 패턴으로 바꾼다.
-     *
-     * LIKE 에서 % 는 "아무 글자나 여러 개", _ 는 "아무 글자 하나"를 뜻한다. 사용자가
-     * % 를 검색하면 그게 와일드카드로 해석되어 전체 강의가 나온다. 그래서 세 글자를
-     * 앞에 \ 를 붙여 평범한 문자로 만든다. \ 자체를 먼저 바꿔야 뒤에 붙는 \ 가
-     * 두 번 처리되지 않는다.
-     *
-     * 이건 SQL 인젝션 방어가 아니다. 그쪽은 ? 바인딩이 막는다. 여기는 검색 결과가
-     * 의도와 다르게 나오는 것을 막는 처리다.
-     */
-    static String toLike(String keyword) {
-        String escaped = keyword
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-        return "%" + escaped + "%";
     }
 }

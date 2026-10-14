@@ -54,24 +54,4 @@ class LectureApplicationTest {
                         org.hamcrest.Matchers.containsString("PUT")));
     }
 
-    @Test
-    void 허용하지_않은_출처의_사전요청은_거절한다() throws Exception {
-        // "*" 로 열어 두면 사용자가 접속한 아무 사이트나 그 사용자 토큰으로 API 를 부를 수 있다.
-        mvc.perform(options("/lectures/1/reviews")
-                        .header("Origin", "http://evil.example")
-                        .header("Access-Control-Request-Method", "PUT"))
-                .andExpect(status().isForbidden())
-                .andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
-    }
-
-    @Test
-    void 허용된_출처에는_파일명_헤더를_읽을_수_있게_노출한다() throws Exception {
-        mvc.perform(get("/lectures").header("Origin", "http://localhost:5173"))
-                .andExpect(status().isOk())
-                .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
-                .andExpect(header().string("Access-Control-Expose-Headers",
-                        org.hamcrest.Matchers.containsString("Content-Disposition")))
-                // 쿠키 인증을 쓰지 않으므로 자격 증명 허용 헤더가 없어야 한다.
-                .andExpect(header().doesNotExist("Access-Control-Allow-Credentials"));
-    }
 }

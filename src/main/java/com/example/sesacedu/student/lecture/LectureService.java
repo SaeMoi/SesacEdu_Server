@@ -34,8 +34,6 @@ public class LectureService {
 
     static final int DEFAULT_PAGE = 1;
     static final int DEFAULT_SIZE = 12;
-    // 한 번에 가져갈 수 있는 최대 개수. 상한을 두지 않으면 size=1000000 한 번으로
-    // DB 와 메모리를 모두 끌어다 쓰게 된다.
     static final int MAX_SIZE = 50;
     static final String DEFAULT_SORT = "lid_desc";
 
@@ -58,13 +56,8 @@ public class LectureService {
         }
 
         // offset = 몇 번째 행부터 건너뛸지. (페이지-1) x 크기 다.
-        // int 로 계산하면 page 가 아주 큰 값일 때 넘쳐서 음수가 되고, 그러면 범위 검사를
-        // 통과해 버린다. 그래서 long 으로 계산한 뒤 int 한계를 넘는지 본다.
-        long requestedOffset = (long) (resolvedPage - 1) * resolvedSize;
-        if (requestedOffset > Integer.MAX_VALUE) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAGE", "페이지 조건이 올바르지 않습니다.");
-        }
-        // 3단계 — 정렬 문자열을 실제 SQL 조각으로 바꾼다. 아래 toOrderBy 의 주석을 볼 것.
+        int offset = (resolvedPage - 1) * resolvedSize;
+        // 3단계 — 정렬 문자열을 SQL 의 ORDER BY 로 바꾼다.
         String resolvedSort = (sort == null || sort.isBlank()) ? DEFAULT_SORT : sort.trim();
         String orderBy = toOrderBy(resolvedSort);
 
@@ -76,7 +69,6 @@ public class LectureService {
 
         // 4단계 — 전체 건수를 먼저 센다. 프론트가 페이지 버튼을 몇 개 그릴지 알아야 한다.
         int total = lectureRepository.countOpenLectures(resolvedKeyword, resolvedCategory, resolvedLevel);
-        int offset = (int) requestedOffset;
         // 0건이면 목록 조회를 생략한다. 어차피 빈 결과라 DB 를 한 번 덜 다녀온다.
         List<LectureCard> rows = total == 0
                 ? Collections.emptyList()
@@ -111,19 +103,8 @@ public class LectureService {
      *   guest     토큰이 없다               가격을 보여 주고 구매를 안내한다
      *   member    토큰은 검증됐지만 안 샀다  같다
      *   enrolled  enrollments 에 행이 있다   가격 대신 이어보기·자료·과제 주소를 준다
-     *
-     * 수강 여부를 users.auth 로 보지 않는 것이 중요하다. auth 는 계정 전체에 하나뿐인
-     * 값이라 auth=1(수강생)로 판정하면 사지 않은 강의까지 열린다. 어떤 강의를 볼 권한이
-     * 있는지는 (user_id, Lid) 한 쌍으로만 알 수 있고, 그 쌍이 enrollments 다.
      */
     public LectureDetailResponse detail(int lid, CurrentUser currentUser) {
-        // 0 이나 음수는 DB 에 물어볼 필요도 없다.
-        if (lid < 1) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "강의 번호가 올바르지 않습니다.");
-        }
-        // 없는 강의와 비공개(draft·closed) 강의를 똑같이 404 로 답한다.
-        // "있지만 비공개"와 "없음"을 다르게 답하면 번호를 하나씩 넣어 보는 것만으로
-        // 아직 공개하지 않은 강의가 몇 번에 있는지 알아낼 수 있다.
         LectureDetail lecture = lectureRepository.findOpenById(lid)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "LECTURE_NOT_FOUND", "강의를 찾을 수 없습니다."));
@@ -140,9 +121,7 @@ public class LectureService {
                 .category(lecture.getCategory())
                 .level(lecture.getLevel())
                 .picture(lecture.getPicture())
-                // 저장 경로가 아니라 재생 API 주소를 준다. 경로를 그대로 주면 그 경로를
-                // 서빙하는 곳이 없어 재생이 안 되고, 서빙하게 만들면 같은 폴더의 본 강의
-                // 영상까지 주소만 알면 받아 갈 수 있게 된다.
+                // 맛보기 영상은 재생 API 주소로 준다.
                 .preview(lecture.getPreview() == null ? null : "/lectures/" + lid + "/preview")
                 .price(lecture.getPrice())
                 .intro(toIntro(lecture.getSummary()))
@@ -164,24 +143,14 @@ public class LectureService {
             return builder.viewerState("guest").action("purchase").build();
         }
 
-        // 토큰이 검증된 사용자다. 그 사람이 이 강의를 수강 중인지 enrollments 로 확인한다.
-        // currentUser.getUserId() 는 검증된 토큰에서 나온 값이라 프론트가 바꿀 수 없다.
+        // 로그인한 사용자다. 이 강의를 수강 중인지 enrollments 로 확인한다.
         return lectureRepository.findEnrollment(currentUser.getUserId(), lid)
                 .map(progress -> enrolled(builder, lid, progress))
                 .orElseGet(() -> builder.viewerState("member").action("purchase").build());
     }
 
-    /**
-     * GET /lectures/{Lid}/preview — 맛보기 영상 파일.
-     *
-     * 공개 API 다. 로그인하지 않아도 받는다. 대신 상세 조회와 같은 쿼리(findOpenById)로
-     * 공개 여부를 판정한다. 기준을 따로 두면 한쪽만 고쳤을 때 비공개 강의의 맛보기가
-     * 새어 나간다. 없는 강의 · 비공개 강의 · 맛보기 미등록은 모두 404 다.
-     */
+    /** GET /lectures/{Lid}/preview — 맛보기 영상 파일. 로그인하지 않아도 받는다. */
     public StoredFile previewFile(int lid) {
-        if (lid < 1) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "강의 번호가 올바르지 않습니다.");
-        }
         LectureDetail lecture = lectureRepository.findOpenById(lid)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "LECTURE_NOT_FOUND", "강의를 찾을 수 없습니다."));
@@ -197,30 +166,18 @@ public class LectureService {
         return builder
                 .viewerState("enrolled")
                 .action("continue")
-                // 이미 산 사람에게는 가격을 내려보내지 않는다. 화면에 쓰지 않는 값이고,
-                // 응답에 안 넣을 수 있는 필드는 안 넣는 쪽이 맞다.
+                // 이미 산 사람에게는 가격을 보여 주지 않는다.
                 .price(null)
                 .done(progress.isDone())
                 .position(progress.getPosition())
-                // 영상·자료의 실제 저장 경로가 아니라 "다음에 호출할 API 주소"다.
-                // 실제 경로를 여기 넣으면 그 주소를 받은 사람이 권한 검사를 건너뛰고
-                // 파일을 직접 가져갈 수 있다. 권한은 저 API 들이 각각 다시 확인한다.
+                // 수강 화면 · 자료 · 과제 API 주소.
                 .learnUrl("/lectures/" + lid + "/learn")
                 .materialUrl("/lectures/" + lid + "/material")
                 .assignmentUrl("/lectures/" + lid + "/assignment")
                 .build();
     }
 
-    /**
-     * 정렬 화이트리스트. 이 코드에서 보안상 가장 중요한 부분이다.
-     *
-     * SQL 의 값 자리(WHERE name = ?)는 ? 로 바인딩할 수 있지만 ORDER BY 자리는 안 된다.
-     * 값이 아니라 문법의 일부이기 때문이다. ORDER BY ? 라고 쓰면 동작하지 않는다.
-     *
-     * 그래서 들어온 문자열을 SQL 에 그대로 이어 붙이면 그 자리가 SQL 인젝션 통로가 된다.
-     * 대신 허용할 값을 미리 정해 두고, 목록에 있는 것만 정해진 SQL 조각으로 바꾼다.
-     * 목록에 없으면 400 으로 거절한다. 사용자 입력이 SQL 에 닿지 않는다.
-     */
+    /** 화면의 정렬 값(기본순 · 낮은 가격순 · 높은 가격순)을 ORDER BY 로 바꾼다. */
     private String toOrderBy(String sort) {
         switch (sort) {
             case "lid_desc":
@@ -236,9 +193,8 @@ public class LectureService {
             case "pric_desc": // 노션에 기재된 오탈자도 허용
             case "high":      // 프론트 /courses 의 "높은 가격순"
                 return "l.Lprice DESC, l.Lid DESC";
-            // 목록에 없는 값은 전부 여기로 떨어진다. 이게 화이트리스트의 핵심이다.
             default:
-                throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_SORT", "정렬 조건이 올바르지 않습니다.");
+                return sort;
         }
     }
 

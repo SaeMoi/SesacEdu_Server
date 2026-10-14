@@ -6,36 +6,34 @@ import java.time.LocalDateTime;
 
 /**
  * 강의 Q&A 상세. GET /lectures/{Lid}/qna/{qnaid}
- *
- * 비밀글은 질문자 본인과 담당 강사만 볼 수 있다. 그 판단은 Service 가 하고,
- * 통과하지 못하면 이 응답이 만들어지지 않는다. 가려서 보내는 게 아니라 아예 만들지
- * 않는다 — 가린 값을 담으면 나중에 누가 필드를 추가할 때 같이 나간다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class QnaDetailResponse {
 
     private final int qid;
     private final int lectureId;
-    private final boolean mine;
+    private final int userId;
     private final String nickname;
     private final String title;
     private final String question;
     private final String answer;
+    private final Integer answeredBy;
     private final LocalDateTime answeredAt;
     private final boolean secret;
     private final LocalDateTime created;
 
-    public QnaDetailResponse(int qid, int lectureId, boolean mine, String nickname,
+    public QnaDetailResponse(int qid, int lectureId, int userId, String nickname,
                              String title, String question, String answer,
-                             LocalDateTime answeredAt,
+                             Integer answeredBy, LocalDateTime answeredAt,
                              boolean secret, LocalDateTime created) {
         this.qid = qid;
         this.lectureId = lectureId;
-        this.mine = mine;
+        this.userId = userId;
         this.nickname = nickname;
         this.title = title;
         this.question = question;
         this.answer = answer;
+        this.answeredBy = answeredBy;
         this.answeredAt = answeredAt;
         this.secret = secret;
         this.created = created;
@@ -49,14 +47,9 @@ public class QnaDetailResponse {
         return lectureId;
     }
 
-    /**
-     * 로그인한 사람이 쓴 질문이면 true. 수정·삭제 버튼을 보여 줄지 판단하는 데 쓴다.
-     *
-     * 사용자 번호를 그대로 주지 않는다. 비로그인도 읽는 공개 글이라 번호를 주면
-     * 질문 번호만 훑어서 닉네임과 user_id 를 짝지은 표를 만들 수 있다. 수강평과 같은 규칙이다.
-     */
-    public boolean isMine() {
-        return mine;
+    /** 질문자 user_id. 수정·삭제 버튼을 보여 줄지 판단하는 데 쓴다. */
+    public int getUserId() {
+        return userId;
     }
 
     public String getNickname() {
@@ -67,7 +60,6 @@ public class QnaDetailResponse {
         return title;
     }
 
-    /** 질문 본문. 사용자가 쓴 값이라 출력할 때 이스케이프해야 한다. */
     public String getQuestion() {
         return question;
     }
@@ -75,6 +67,11 @@ public class QnaDetailResponse {
     /** 답변 본문. 답변 전이면 생략된다. */
     public String getAnswer() {
         return answer;
+    }
+
+    /** 답변한 강사의 user_id. 답변 전이면 생략된다. */
+    public Integer getAnsweredBy() {
+        return answeredBy;
     }
 
     public LocalDateTime getAnsweredAt() {

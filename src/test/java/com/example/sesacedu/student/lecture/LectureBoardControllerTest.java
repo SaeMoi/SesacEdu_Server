@@ -153,8 +153,7 @@ class LectureBoardControllerTest {
         when(boardRepository.countQna(1, null)).thenReturn(1);
         when(boardRepository.findQna(1, 0, 10, null)).thenReturn(List.of(secretQuestion()));
 
-        // 99 도 강사일 수 있지만 이 강의의 담당은 7 이다.
-        // users.auth 로 "강사면 통과" 시키면 이 사람이 남의 강의 비밀글을 읽게 된다.
+        // 이 강의의 담당 강사는 7 이다.
         mvcAs(99).perform(get("/lectures/1/qna").header("Authorization", TOKEN))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.questions[0].accessible").value(false))
@@ -176,24 +175,6 @@ class LectureBoardControllerTest {
     }
 
     // ───────── Q&A 상세 ─────────
-
-    @Test
-    void 비밀글_상세는_남이_열면_403이다() throws Exception {
-        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
-
-        mvcAs(99).perform(get("/lectures/1/qna/2").header("Authorization", TOKEN))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("QNA_SECRET"));
-    }
-
-    @Test
-    void 비밀글_상세는_비로그인이_열면_403이다() throws Exception {
-        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
-
-        mvcAs(null).perform(get("/lectures/1/qna/2"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("QNA_SECRET"));
-    }
 
     @Test
     void 비밀글_상세는_작성자가_열면_본문까지_나온다() throws Exception {

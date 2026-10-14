@@ -46,35 +46,26 @@ public class ReviewListResponse {
         return reviewCount;
     }
 
-    /**
-     * 수강평 한 건.
-     *
-     * 작성자는 닉네임만 내보낸다. 실명·메일·전화번호는 조회하지도 않는다.
-     *
-     * 사용자 번호는 내보내지 않는다. 수정·삭제 버튼을 띄우려면 "이게 내 글인가"만
-     * 알면 되고, 그건 mine 하나로 충분하다. 번호를 주면 닉네임과 번호가 짝지어진
-     * 표를 목록만 훑어서 만들 수 있고, 그 번호는 다른 API 의 인자로 쓰인다.
-     */
+    /** 수강평 한 건. userId 로 내가 쓴 글인지 판단해 수정·삭제 버튼을 띄운다. */
     public static class ReviewItem {
 
-        private final boolean mine;
+        private final int userId;
         private final String nickname;
         private final int star;
         private final String review;
         private final LocalDateTime created;
 
-        public ReviewItem(boolean mine, String nickname, int star, String review,
+        public ReviewItem(int userId, String nickname, int star, String review,
                           LocalDateTime created) {
-            this.mine = mine;
+            this.userId = userId;
             this.nickname = nickname;
             this.star = star;
             this.review = review;
             this.created = created;
         }
 
-        /** 로그인한 사람이 쓴 글이면 true. 비로그인은 항상 false 다. */
-        public boolean isMine() {
-            return mine;
+        public int getUserId() {
+            return userId;
         }
 
         public String getNickname() {
@@ -86,7 +77,6 @@ public class ReviewListResponse {
             return star;
         }
 
-        /** 사용자가 쓴 본문이다. 화면에 뿌릴 때 이스케이프해야 한다. */
         public String getReview() {
             return review;
         }

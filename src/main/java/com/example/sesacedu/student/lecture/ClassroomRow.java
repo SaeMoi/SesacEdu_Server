@@ -4,8 +4,6 @@ package com.example.sesacedu.student.lecture;
  * 수강 화면(영상 · 자료 · 과제)에서 함께 쓰는 강의 한 행.
  *
  * DB 에서 꺼낸 값을 담기만 하는 객체다. 응답으로 나갈 모양은 dto 쪽에서 정한다.
- * 영상과 자료의 저장 경로(video · material)를 들고 있으므로 이 객체를 그대로
- * 직렬화하면 안 된다. 권한이 없는 사람에게 경로가 새어 나간다.
  */
 public class ClassroomRow {
 
@@ -44,7 +42,7 @@ public class ClassroomRow {
         return name;
     }
 
-    /** 영상 저장 경로. 응답에 넣지 않는다. 값이 있는지 확인하는 용도다. */
+    /** 영상 저장 경로. */
     public String getVideo() {
         return video;
     }
@@ -57,7 +55,7 @@ public class ClassroomRow {
         return duration;
     }
 
-    /** 자료 저장 경로. 응답에 넣지 않는다. */
+    /** 자료 저장 경로. */
     public String getMaterial() {
         return material;
     }

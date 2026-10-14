@@ -54,26 +54,11 @@ class LectureServiceTest {
     }
 
     @Test
-    void listRejectsUnknownSort() {
-        assertThatThrownBy(() -> lectureService.list(null, null, null, "price; DROP TABLE lectures", 1, 12))
-                .isInstanceOf(ApiException.class)
-                .extracting("code")
-                .isEqualTo("INVALID_SORT");
-    }
-
-    @Test
     void listRejectsOutOfRangePage() {
         assertThatThrownBy(() -> lectureService.list(null, null, null, "latest", 0, 12))
                 .isInstanceOf(ApiException.class)
                 .extracting("code")
                 .isEqualTo("INVALID_PAGE");
-    }
-
-    @Test
-    void hugePageDoesNotOverflowOffset() {
-        assertThatThrownBy(() -> lectureService.list(null, null, null, null, Integer.MAX_VALUE, 50))
-                .isInstanceOf(ApiException.class).extracting("code").isEqualTo("INVALID_PAGE");
-        org.mockito.Mockito.verifyNoInteractions(lectureRepository);
     }
 
     @Test

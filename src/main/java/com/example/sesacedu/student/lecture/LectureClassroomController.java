@@ -28,9 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 수강 화면 입구. 영상 · 자료 · 과제 세 가지를 받는다.
  *
- * 세 API 모두 수강자 전용이다. 권한 판단은 Service 가 하고 여기서는 하지 않는다.
- * currentUser 는 프론트가 보내는 값이 아니라 CurrentUserArgumentResolver 가
- * Authorization 헤더를 검증한 뒤 넣어 주는 값이다.
+ * currentUser 는 CurrentUserArgumentResolver 가 Authorization 헤더에서 꺼내 넣어 준다.
  */
 @Tag(name = "강의")
 @RestController
@@ -47,8 +45,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "강의 수강",
-            description = "수강 중인 사람만 볼 수 있다. 영상의 실제 저장 경로는 응답에 넣지 않고 "
-                    + "재생 API 주소만 준다.")
+            description = "수강 중인 사람만 볼 수 있다. 재생 API 주소와 이어보기 위치, 목차를 준다.")
     @GetMapping("/learn")
     public LearnResponse learn(@PathVariable("lid") int lid,
                                @Parameter(hidden = true) CurrentUser currentUser) {
@@ -56,8 +53,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "강의 자료",
-            description = "수강 중인 사람만 볼 수 있다. 원본 파일명과 다운로드 API 주소를 준다. "
-                    + "저장 경로는 넣지 않는다.")
+            description = "수강 중인 사람만 볼 수 있다. 원본 파일명과 다운로드 API 주소를 준다.")
     @GetMapping("/material")
     public MaterialResponse material(@PathVariable("lid") int lid,
                                      @Parameter(hidden = true) CurrentUser currentUser) {
@@ -65,7 +61,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "이어보기 위치 저장",
-            description = "재생 중 주기적으로 호출한다. 영상 길이를 넘는 값은 길이로 잘라 저장한다.")
+            description = "재생 중 주기적으로 호출한다.")
     @PutMapping("/learn/position")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void savePosition(@PathVariable("lid") int lid,
@@ -75,8 +71,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "수료 처리",
-            description = "저장된 이어보기 위치가 영상 끝에 닿아야(100%) 수료로 처리한다. "
-                    + "프론트가 보낸 값으로 판단하지 않는다. 이미 수료했으면 409 다.")
+            description = "저장된 이어보기 위치가 영상 끝에 닿아야(100%) 수료로 처리한다. 이미 수료했으면 409 다.")
     @PostMapping("/complete")
     public CompleteResponse complete(@PathVariable("lid") int lid,
                                      @Parameter(hidden = true) CurrentUser currentUser) {
@@ -105,8 +100,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "내 과제 파일 다운로드",
-            description = "내가 낸 제출 파일만 받을 수 있다. 남의 제출 번호는 404 다. "
-                    + "내용만 내고 파일을 첨부하지 않았으면 404 SUBMISSION_FILE_NOT_FOUND 다.")
+            description = "제출한 파일을 받는다. 파일 없이 내용만 냈으면 404 SUBMISSION_FILE_NOT_FOUND 다.")
     @GetMapping("/assignments/{aid}/file")
     public ResponseEntity<Resource> submissionFile(@PathVariable("lid") int lid,
                                                    @PathVariable("aid") int aid,
@@ -127,7 +121,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "과제 상세 확인",
-            description = "내 제출물만 볼 수 있다. 남의 제출 번호를 넣으면 404 다.")
+            description = "제출물 한 건을 번호로 본다.")
     @GetMapping("/assignments/{aid}")
     public AssignmentResponse.SubmissionResponse submission(@PathVariable("lid") int lid,
                                                            @PathVariable("aid") int aid,
@@ -136,8 +130,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "과제 수정",
-            description = "내 제출물만 고칠 수 있다. 채점이 끝났으면 409 다. "
-                    + "점수와 피드백은 이 API 로 바뀌지 않는다.")
+            description = "제출물을 고친다. 채점이 끝났으면 409 다.")
     @PutMapping("/assignments/{aid}")
     public AssignmentResponse.SubmissionResponse modify(@PathVariable("lid") int lid,
                                                        @PathVariable("aid") int aid,
@@ -147,7 +140,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "과제 제출 삭제",
-            description = "내 제출물만 지울 수 있다. 채점이 끝났으면 409 다.")
+            description = "제출물을 지운다. 채점이 끝났으면 409 다.")
     @DeleteMapping("/assignments/{aid}")
     // 지운 뒤 돌려줄 내용이 없다. 204 는 "처리했고 본문은 없다"는 뜻이다.
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -158,7 +151,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "과제 안내",
-            description = "과제 안내와 내 제출물을 함께 준다. 남의 제출물은 나오지 않는다.")
+            description = "과제 안내와 내 제출물을 함께 준다.")
     @GetMapping("/assignment")
     public AssignmentResponse assignment(@PathVariable("lid") int lid,
                                          @Parameter(hidden = true) CurrentUser currentUser) {

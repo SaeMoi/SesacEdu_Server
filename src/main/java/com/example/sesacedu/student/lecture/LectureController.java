@@ -57,13 +57,12 @@ public class LectureController {
 
     @Operation(summary = "강의 상세",
             description = "비로그인(guest)·로그인 미구매(member)·수강자(enrolled)를 구분해 응답한다. "
-                    + "영상·자료 실제 경로와 강사 계좌는 넣지 않는다.")
+)
     // GET /lectures/3  — 주소 자체에 값이 박혀 있는 형태다.
     // @PathVariable = 주소 경로에 들어 있는 값. query(?lid=3)가 아니라 경로(/lectures/3)다.
     //
     // currentUser 는 프론트가 보내는 값이 아니다. CurrentUserArgumentResolver 가 Authorization
     // 헤더의 토큰을 검증한 뒤 넣어 준다. 토큰이 없으면 null 이고, 그 경우는 guest 로 응답한다.
-    // 사용자 번호를 query 로 받으면 남의 번호를 적어 보내는 IDOR 이 되므로 그렇게 하지 않는다.
     // @Parameter(hidden = true) 는 Swagger 문서에 이 인자를 노출하지 않으려는 표시다.
     @GetMapping("/{lid}")
     public LectureDetailResponse detail(

@@ -7,9 +7,7 @@ import java.util.List;
 /**
  * 강의 수강 화면 응답. GET /lectures/{Lid}/learn
  *
- * 영상의 실제 저장 경로는 넣지 않는다. 대신 재생을 요청할 API 주소(videoUrl)를 준다.
- * 저장 경로를 내려보내면 그 주소를 받은 사람이 권한 검사를 건너뛰고 파일을 바로
- * 가져갈 수 있다. 재생 API 가 호출될 때 수강 권한을 다시 확인한다.
+ * videoUrl 은 영상 재생 API 주소다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class LearnResponse {

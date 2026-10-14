@@ -10,7 +10,6 @@ import java.time.LocalDateTime;
  * 과제는 강의당 하나, 제출은 사용자당 하나다(assignments 의 (Lid, user_id) UNIQUE).
  * 그래서 목록이 아니라 단건으로 돌려준다.
  *
- * submission 은 내가 낸 것만 담는다. 남의 제출물은 이 API 로 볼 수 없다.
  * 아직 안 냈으면 submission 이 생략된다.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -84,15 +83,12 @@ public class AssignmentResponse {
             return assignmentId;
         }
 
-        /** 내가 올린 파일의 원본 이름. 저장 경로(work)는 응답에 넣지 않는다. */
+        /** 올린 파일의 원본 이름. */
         public String getFilename() {
             return filename;
         }
 
-        /**
-         * 내 제출 파일을 내려받는 API 주소. 파일 없이 내용만 냈으면 생략된다.
-         * 저장 경로를 주지 않는 이유는 영상·자료와 같다 — 매 요청마다 본인 확인을 다시 한다.
-         */
+        /** 제출 파일 다운로드 API 주소. 파일 없이 내용만 냈으면 생략된다. */
         public String getFileUrl() {
             return fileUrl;
         }

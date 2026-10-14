@@ -76,7 +76,7 @@ public class QnaListResponse {
             return secret;
         }
 
-        /** 상세로 들어갈 수 있는지. false 면 프론트가 링크를 막는다(서버도 다시 막는다). */
+        /** 비밀글을 볼 수 있는지. false 면 제목이 가려져 있다. */
         public boolean isAccessible() {
             return accessible;
         }

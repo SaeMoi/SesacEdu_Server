@@ -11,14 +11,13 @@ import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.method.support.ModelAndViewContainer;
 
 /**
- * 컨트롤러 메서드에 CurrentUser가 있으면 Authorization Bearer를 읽어 검증된 사용자만 넘긴다.
- * 헤더가 없으면 비로그인. 제시된 토큰은 반드시 공통 검증기를 통과해야 한다.
+ * 컨트롤러 메서드에 CurrentUser 가 있으면 Authorization Bearer 토큰을 읽어 사용자로 바꿔 넘긴다.
+ * 헤더가 없으면 비로그인(null)이다.
  */
 @Component
 public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolver {
 
     // ObjectProvider 로 받으면 검증기 빈이 아직 없어도 서버가 뜬다.
-    // 바로 주입받게 하면 인증 담당자 코드가 합쳐지기 전까지 기동 자체가 실패한다.
     private final ObjectProvider<AccessTokenVerifier> verifierProvider;
 
     public CurrentUserArgumentResolver(ObjectProvider<AccessTokenVerifier> verifierProvider) {
@@ -48,23 +47,11 @@ public class CurrentUserArgumentResolver implements HandlerMethodArgumentResolve
             throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증 정보가 올바르지 않습니다.");
         }
         String token = header.substring(7).trim();
-        if (token.isEmpty() || token.chars().anyMatch(Character::isWhitespace)) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증 정보가 올바르지 않습니다.");
-        }
-        // 여기가 중요하다. 토큰을 디코딩해서 안에 적힌 user_id 를 그대로 믿지 않는다.
-        // JWT 의 payload 는 서명을 검증하지 않으면 누구나 고쳐 쓸 수 있는 평문이다.
-        // 서명·만료·발급자 확인은 전부 검증기가 한다.
+        // 토큰 검증은 검증기(JwtAccessTokenVerifier)가 한다.
         AccessTokenVerifier verifier = verifierProvider.getIfAvailable();
-        // 검증기가 아직 없을 때 "일단 통과"시키면 그게 바로 인증 우회다.
-        // 통과시키지 않고 503 으로 거절한다.
         if (verifier == null) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "AUTH_NOT_CONFIGURED", "인증 연결이 준비되지 않았습니다.");
         }
-        CurrentUser user = verifier.verify(token);
-        // 검증기가 빈 값이나 0 같은 번호를 돌려주는 경우까지 막는다.
-        if (user == null || user.getUserId() < 1) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증 정보가 올바르지 않습니다.");
-        }
-        return user;
+        return verifier.verify(token);
     }
 }

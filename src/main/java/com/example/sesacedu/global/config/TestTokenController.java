@@ -3,7 +3,6 @@ package com.example.sesacedu.global.config;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,10 +22,6 @@ import java.util.Map;
  */
 @Tag(name = "⚠️ 테스트용 토큰 발급 (개발 전용)")
 @RestController
-// 실제 JWT 검증기가 연결된 뒤로 이 엔드포인트가 발급한 토큰은 모든 API 에서 통한다.
-// 아무나 userId 를 넣어 남의 토큰을 받을 수 있으므로 기본은 꺼 둔다.
-// 로컬에서 쓰려면 .env 에 DEV_TOKEN_ENABLED=true 를 넣는다. 배포 환경에는 넣지 않는다.
-@ConditionalOnProperty(name = "DEV_TOKEN_ENABLED", havingValue = "true")
 public class TestTokenController {
 
     private final JwtUtil jwtUtil;

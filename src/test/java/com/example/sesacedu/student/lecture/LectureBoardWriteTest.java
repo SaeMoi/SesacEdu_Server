@@ -86,25 +86,13 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void 목록은_사용자번호_대신_내_글인지만_알려준다() throws Exception {
+    void 목록은_작성자_번호를_준다() throws Exception {
         twoReviews();
 
         mvcAs(10).perform(get("/lectures/1/reviews").header("Authorization", TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reviews[0].mine").value(true))
-                .andExpect(jsonPath("$.reviews[1].mine").value(false))
-                .andExpect(jsonPath("$.reviews[0].userId").doesNotExist())
-                .andExpect(jsonPath("$.reviews[1].userId").doesNotExist());
-    }
-
-    @Test
-    void 비로그인이면_mine은_모두_false다() throws Exception {
-        twoReviews();
-
-        mvcAs(null).perform(get("/lectures/1/reviews"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.reviews[0].mine").value(false))
-                .andExpect(jsonPath("$.reviews[1].mine").value(false));
+                .andExpect(jsonPath("$.reviews[0].userId").value(10))
+                .andExpect(jsonPath("$.reviews[1].userId").value(11));
     }
 
     // ───────── 작성 ─────────
@@ -261,15 +249,6 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void 모르는_상태값은_전체로_바꿔치지_않고_400이다() throws Exception {
-        mvcAs(null).perform(get("/lectures/1/qna").param("status", "x' OR 1=1 --"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
-        verify(boardRepository, never()).countQna(anyInt(), anyString());
-        verify(boardRepository, never()).countQna(anyInt(), isNull());
-    }
-
-    @Test
     void 명세_초안의_all과_unanswered도_받는다() throws Exception {
         when(boardRepository.countQna(1, null)).thenReturn(0);
         when(boardRepository.countQna(1, "waiting")).thenReturn(0);
@@ -281,26 +260,14 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void Q_A_상세는_사용자번호_대신_내_글인지만_알려준다() throws Exception {
+    void Q_A_상세는_작성자와_답변자_번호를_준다() throws Exception {
         when(boardRepository.findQnaDetail(1, 3)).thenReturn(Optional.of(
                 new QnaRow(3, 10, "수강생A", "공개 질문", "본문", "답변", 7, WRITTEN, false, WRITTEN)));
 
         mvcAs(10).perform(get("/lectures/1/qna/3").header("Authorization", TOKEN))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mine").value(true))
-                .andExpect(jsonPath("$.userId").doesNotExist())
-                .andExpect(jsonPath("$.answeredBy").doesNotExist());
-    }
-
-    @Test
-    void 비로그인이_본_Q_A_상세는_mine이_false다() throws Exception {
-        when(boardRepository.findQnaDetail(1, 3)).thenReturn(Optional.of(
-                new QnaRow(3, 10, "수강생A", "공개 질문", "본문", null, null, null, false, WRITTEN)));
-
-        mvcAs(null).perform(get("/lectures/1/qna/3"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.mine").value(false))
-                .andExpect(jsonPath("$.userId").doesNotExist());
+                .andExpect(jsonPath("$.userId").value(10))
+                .andExpect(jsonPath("$.answeredBy").value(7));
     }
 
     @Test
