@@ -13,6 +13,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 
 /**
  * 수강 화면(영상 · 자료 · 과제)의 판단을 담당한다.
@@ -27,6 +31,7 @@ public class LectureClassroomService {
     private final LectureRepository lectureRepository;
     private final LectureClassroomRepository classroomRepository;
     private final LectureFileStorage storage;
+    private Clock clock = Clock.systemDefaultZone();
 
     public LectureClassroomService(LectureRepository lectureRepository,
                                    LectureClassroomRepository classroomRepository,
@@ -50,7 +55,8 @@ public class LectureClassroomService {
                 enrolled.progress.getPosition(),
                 enrolled.progress.isDone(),
                 "/lectures/" + lid + "/material",
-                "/lectures/" + lid + "/assignment");
+                "/lectures/" + lid + "/assignment",
+                classroomRepository.findChapters(lid));
     }
 
     /** GET /lectures/{Lid}/material — 강의 자료 안내. */
@@ -71,13 +77,12 @@ public class LectureClassroomService {
     }
 
     /**
-     * 수료로 인정하는 시청 비율. 영상 길이의 90% 지점을 넘기면 수료다.
+     * 수료로 인정하는 시청 비율. 영상을 끝까지 봐야 수료다(1.0 = 100%).
      *
-     * 100% 를 요구하지 않는 이유는, 끝부분 인사말까지 봐야 수료가 되면 사실상
-     * 아무도 수료하지 못하고 문의가 쌓인다. 반대로 절반으로 두면 수료가
-     * 의미를 잃는다. 값을 상수로 빼 둔 건 기준이 바뀔 때 한 곳만 고치게 하려는 것이다.
+     * 이어보기 위치는 영상 길이로 잘라 저장하므로 끝까지 보면 위치가 길이와 같아진다.
+     * 값을 상수로 빼 둔 건 기준이 바뀔 때 한 곳만 고치게 하려는 것이다.
      */
-    static final double COMPLETE_RATIO = 0.9;
+    static final double COMPLETE_RATIO = 1.0;
 
     /**
      * PUT /lectures/{Lid}/learn/position — 이어보기 위치 저장.
@@ -99,12 +104,39 @@ public class LectureClassroomService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "재생 위치는 0 이상이어야 합니다.");
         }
 
+        Instant now = clock.instant();
+
+        // 앞으로 가는 만큼은 실제로 흐른 시간 안에서만 받는다. 뒤로 가는 것은 언제든 받는다.
+        // 이게 없으면 영상을 열지 않고 위치만 끝으로 보내 수료할 수 있다.
+        int previous = enrolled.progress.getPosition() == null ? 0 : enrolled.progress.getPosition();
+        long elapsed = classroomRepository.findPositionAt(lid, currentUser.getUserId())
+                .map(at -> Math.max(0, Duration.between(at.toInstant(), now).getSeconds()))
+                .orElse(0L);
+        long allowed = previous + (long) Math.ceil(elapsed * MAX_PLAYBACK_SPEED) + POSITION_SLACK_SEC;
+        if (position > allowed) {
+            position = (int) Math.min(allowed, Integer.MAX_VALUE);
+        }
+
         Integer duration = enrolled.lecture.getDuration();
         if (duration != null && position > duration) {
             position = duration;
         }
 
-        classroomRepository.updatePosition(lid, currentUser.getUserId(), position);
+        classroomRepository.updatePosition(lid, currentUser.getUserId(), position, Timestamp.from(now));
+    }
+
+    /** 플레이어가 허용하는 가장 빠른 재생 속도. 이보다 빨리 위치가 앞으로 가면 건너뛴 것이다. */
+    static final double MAX_PLAYBACK_SPEED = 2.0;
+
+    /**
+     * 저장 간격 · 네트워크 지연 · 짧은 건너뛰기를 받아 주는 여유(초).
+     * 처음 저장할 때(이전 저장 시각이 없을 때)는 이 값까지만 앞으로 갈 수 있다.
+     */
+    static final int POSITION_SLACK_SEC = 30;
+
+    /** 테스트에서 시각을 고정할 때만 쓴다. */
+    void setClock(Clock clock) {
+        this.clock = clock;
     }
 
     /**
@@ -200,14 +232,7 @@ public class LectureClassroomService {
         // 내 user_id 로만 조회한다. 남의 제출물은 이 API 로 나올 수 없다.
         AssignmentResponse.SubmissionResponse submission = classroomRepository
                 .findMySubmission(lid, currentUser.getUserId())
-                .map(row -> new AssignmentResponse.SubmissionResponse(
-                        row.getAid(),
-                        row.getWorkFilename(),
-                        row.getNote(),
-                        row.getSubmitted(),
-                        row.getScore(),
-                        row.getFeedback(),
-                        row.getFeedbackAt()))
+                .map(row -> toSubmissionResponse(lid, row))
                 .orElse(null);
 
         return new AssignmentResponse(
@@ -248,7 +273,7 @@ public class LectureClassroomService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND", "제출물을 찾을 수 없습니다."));
 
-        return toSubmissionResponse(row);
+        return toSubmissionResponse(lid, row);
     }
 
     /** PUT /lectures/{Lid}/assignments/{aid} — 제출물 수정. */
@@ -277,7 +302,7 @@ public class LectureClassroomService {
             throw scoredOrGone(lid, currentUser.getUserId(), aid);
         }
 
-        return toSubmissionResponse(classroomRepository
+        return toSubmissionResponse(lid, classroomRepository
                 .findMySubmissionById(lid, currentUser.getUserId(), aid)
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND", "제출물을 찾을 수 없습니다.")));
@@ -316,6 +341,25 @@ public class LectureClassroomService {
                         "제출물을 찾을 수 없습니다."));
     }
 
+    /**
+     * GET /lectures/{Lid}/assignments/{aid}/file — 내가 낸 과제 파일을 내려받는다.
+     *
+     * 본인 것만 받는다. 남의 제출 번호를 넣으면 403 이 아니라 404 다 — 다른 제출 API 와 같은 규칙이다.
+     * 파일 없이 내용만 낸 제출물이면 SUBMISSION_FILE_NOT_FOUND 로 답한다.
+     */
+    public StoredFile submissionFile(int lid, int aid, CurrentUser currentUser) {
+        requireEnrolled(lid, currentUser);
+        if (aid < 1) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제출 번호가 올바르지 않습니다.");
+        }
+        String[] file = classroomRepository.findMyWorkFile(lid, currentUser.getUserId(), aid)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND, "SUBMISSION_NOT_FOUND", "제출물을 찾을 수 없습니다."));
+
+        Path path = storage.resolve(file[0], "SUBMISSION_FILE_NOT_FOUND", "제출한 파일이 없습니다.");
+        return new StoredFile(path, file[1] == null ? "submission" : file[1]);
+    }
+
     private void requireAssignmentOpen(ClassroomRow lecture) {
         if (lecture.getAssignmentTitle() == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "ASSIGNMENT_NOT_FOUND", "등록된 과제가 없습니다.");
@@ -331,20 +375,32 @@ public class LectureClassroomService {
      * 올라오는 것을 막기 위한 것이다.
      */
     private void validate(AssignmentSubmitRequest request) {
-        if (request == null || isBlank(request.getWork())) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제출 파일이 필요합니다.");
+        // 파일과 내용 중 하나만 있으면 된다. 화면이 "파일 없이 내용만 제출"을 허용한다.
+        if (request == null || (isBlank(request.getWork()) && isBlank(request.getNote()))) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "파일을 첨부하거나 내용을 입력해 주세요.");
         }
-        if (request.getWork().length() > 500 || length(request.getWorkFilename()) > 255) {
+        // 파일 없이 낸 경우 원본 파일명만 남지 않게 함께 비운다. 남으면 화면에 있지도 않은
+        // 첨부파일 이름이 나오고 다운로드 주소까지 생긴다.
+        if (isBlank(request.getWork())) {
+            request.setWork(null);
+            request.setWorkFilename(null);
+        }
+        if (length(request.getWork()) > 500 || length(request.getWorkFilename()) > 255) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "파일 정보가 너무 깁니다.");
         }
-        if (length(request.getNote()) > 1000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "메모는 1000자까지 입력할 수 있습니다.");
+        // Wnote 는 CLOB 이라 DB 한도는 없다. 화면이 받는 3000자로 맞춘다.
+        if (length(request.getNote()) > 3000) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "내용은 3000자까지 입력할 수 있습니다.");
         }
     }
 
-    private AssignmentResponse.SubmissionResponse toSubmissionResponse(SubmissionRow row) {
+    private AssignmentResponse.SubmissionResponse toSubmissionResponse(int lid, SubmissionRow row) {
+        // 원본 파일명이 있으면 파일을 낸 것이다. validate 가 파일 없이 낸 제출의 파일명을 비운다.
+        String fileUrl = row.getWorkFilename() == null
+                ? null
+                : "/lectures/" + lid + "/assignments/" + row.getAid() + "/file";
         return new AssignmentResponse.SubmissionResponse(
-                row.getAid(), row.getWorkFilename(), row.getNote(), row.getSubmitted(),
+                row.getAid(), row.getWorkFilename(), fileUrl, row.getNote(), row.getSubmitted(),
                 row.getScore(), row.getFeedback(), row.getFeedbackAt());
     }
 

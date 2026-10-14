@@ -75,7 +75,7 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "수료 처리",
-            description = "저장된 이어보기 위치가 영상 길이의 90% 를 넘어야 수료로 처리한다. "
+            description = "저장된 이어보기 위치가 영상 끝에 닿아야(100%) 수료로 처리한다. "
                     + "프론트가 보낸 값으로 판단하지 않는다. 이미 수료했으면 409 다.")
     @PostMapping("/complete")
     public CompleteResponse complete(@PathVariable("lid") int lid,
@@ -102,6 +102,16 @@ public class LectureClassroomController {
                                                      @Parameter(hidden = true) CurrentUser currentUser) {
         StoredFile file = classroomService.materialFile(lid, currentUser);
         return fileResponses.send(file, true);
+    }
+
+    @Operation(summary = "내 과제 파일 다운로드",
+            description = "내가 낸 제출 파일만 받을 수 있다. 남의 제출 번호는 404 다. "
+                    + "내용만 내고 파일을 첨부하지 않았으면 404 SUBMISSION_FILE_NOT_FOUND 다.")
+    @GetMapping("/assignments/{aid}/file")
+    public ResponseEntity<Resource> submissionFile(@PathVariable("lid") int lid,
+                                                   @PathVariable("aid") int aid,
+                                                   @Parameter(hidden = true) CurrentUser currentUser) {
+        return fileResponses.send(classroomService.submissionFile(lid, aid, currentUser), true);
     }
 
     @Operation(summary = "과제 제출",

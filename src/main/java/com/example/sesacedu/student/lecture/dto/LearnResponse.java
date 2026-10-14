@@ -2,6 +2,8 @@ package com.example.sesacedu.student.lecture.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.util.List;
+
 /**
  * 강의 수강 화면 응답. GET /lectures/{Lid}/learn
  *
@@ -20,9 +22,11 @@ public class LearnResponse {
     private final boolean done;
     private final String materialUrl;
     private final String assignmentUrl;
+    private final List<ChapterResponse> chapters;
 
     public LearnResponse(int lectureId, String name, String videoUrl, Integer duration,
-                         Integer position, boolean done, String materialUrl, String assignmentUrl) {
+                         Integer position, boolean done, String materialUrl, String assignmentUrl,
+                         List<ChapterResponse> chapters) {
         this.lectureId = lectureId;
         this.name = name;
         this.videoUrl = videoUrl;
@@ -31,6 +35,7 @@ public class LearnResponse {
         this.done = done;
         this.materialUrl = materialUrl;
         this.assignmentUrl = assignmentUrl;
+        this.chapters = chapters;
     }
 
     public int getLectureId() {
@@ -67,5 +72,13 @@ public class LearnResponse {
 
     public String getAssignmentUrl() {
         return assignmentUrl;
+    }
+
+    /**
+     * 강의 목차. 시작 초 순서다. 등록된 목차가 없으면 빈 배열이다.
+     * 생략하지 않고 빈 배열을 주는 이유는, 화면이 "목차 없음"과 "응답 오류"를 구분하게 하려는 것이다.
+     */
+    public List<ChapterResponse> getChapters() {
+        return chapters;
     }
 }

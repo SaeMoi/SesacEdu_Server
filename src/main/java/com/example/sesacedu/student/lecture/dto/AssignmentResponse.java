@@ -60,17 +60,19 @@ public class AssignmentResponse {
 
         private final int assignmentId;
         private final String filename;
+        private final String fileUrl;
         private final String note;
         private final LocalDateTime submittedAt;
         private final Integer score;
         private final String feedback;
         private final LocalDateTime feedbackAt;
 
-        public SubmissionResponse(int assignmentId, String filename, String note,
+        public SubmissionResponse(int assignmentId, String filename, String fileUrl, String note,
                                   LocalDateTime submittedAt, Integer score,
                                   String feedback, LocalDateTime feedbackAt) {
             this.assignmentId = assignmentId;
             this.filename = filename;
+            this.fileUrl = fileUrl;
             this.note = note;
             this.submittedAt = submittedAt;
             this.score = score;
@@ -87,7 +89,15 @@ public class AssignmentResponse {
             return filename;
         }
 
-        /** 제출할 때 적은 메모. DB 의 Wnote 다. */
+        /**
+         * 내 제출 파일을 내려받는 API 주소. 파일 없이 내용만 냈으면 생략된다.
+         * 저장 경로를 주지 않는 이유는 영상·자료와 같다 — 매 요청마다 본인 확인을 다시 한다.
+         */
+        public String getFileUrl() {
+            return fileUrl;
+        }
+
+        /** 제출 내용(과제 답안 또는 메모). DB 의 Wnote 다. */
         public String getNote() {
             return note;
         }

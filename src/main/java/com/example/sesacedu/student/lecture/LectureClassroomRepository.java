@@ -4,6 +4,7 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
+import com.example.sesacedu.student.lecture.dto.ChapterResponse;
 import org.springframework.stereotype.Repository;
 
 import java.sql.PreparedStatement;
@@ -11,6 +12,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -57,10 +59,29 @@ public class LectureClassroomRepository {
      * 이미 수료한 강의도 위치는 갱신한다. 다시 볼 수 있어야 하고, 수료 여부는
      * done 이 들고 있으므로 위치가 되돌아가도 수료가 풀리지 않는다.
      */
-    public int updatePosition(int lid, int userId, int position) {
+    public int updatePosition(int lid, int userId, int position, Timestamp savedAt) {
         return jdbcTemplate.update(
-                "UPDATE enrollments SET position = ? WHERE user_id = ? AND Lid = ?",
-                position, userId, lid);
+                "UPDATE enrollments SET position = ?, position_at = ? WHERE user_id = ? AND Lid = ?",
+                position, savedAt, userId, lid);
+    }
+
+    /** 이어보기 위치를 마지막으로 저장한 시각. 한 번도 저장하지 않았으면 비어 있다. */
+    public Optional<Timestamp> findPositionAt(int lid, int userId) {
+        try {
+            return Optional.ofNullable(jdbcTemplate.queryForObject(
+                    "SELECT position_at FROM enrollments WHERE user_id = ? AND Lid = ?",
+                    Timestamp.class, userId, lid));
+        } catch (EmptyResultDataAccessException ex) {
+            return Optional.empty();
+        }
+    }
+
+    /** 강의 목차. 시작 초 순서로 준다. */
+    public List<ChapterResponse> findChapters(int lid) {
+        return jdbcTemplate.query(
+                "SELECT start_sec, title FROM chapters WHERE Lid = ? ORDER BY start_sec",
+                (rs, n) -> new ChapterResponse(rs.getInt("start_sec"), rs.getString("title")),
+                lid);
     }
 
     /**
@@ -129,6 +150,24 @@ public class LectureClassroomRepository {
                 + "FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ?";
         try {
             return Optional.of(jdbcTemplate.queryForObject(sql, this::mapSubmission, aid, lid, userId));
+        } catch (EmptyResultDataAccessException ex) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 내 제출물의 저장 경로와 원본 파일명. 파일을 내려보낼 때만 쓴다.
+     *
+     * 제출물 응답(SubmissionRow)에는 저장 경로를 담지 않는다. 경로가 응답 객체에 실려 있으면
+     * 누군가 필드를 추가할 때 같이 나간다. 그래서 내려보낼 때만 따로 꺼낸다.
+     * 조건절에 user_id 가 있으므로 남의 제출물은 빈 결과다.
+     */
+    public Optional<String[]> findMyWorkFile(int lid, int userId, int aid) {
+        String sql = "SELECT work, work_filename FROM assignments WHERE aid = ? AND Lid = ? AND user_id = ?";
+        try {
+            return Optional.of(jdbcTemplate.queryForObject(sql,
+                    (rs, n) -> new String[]{rs.getString("work"), rs.getString("work_filename")},
+                    aid, lid, userId));
         } catch (EmptyResultDataAccessException ex) {
             return Optional.empty();
         }
