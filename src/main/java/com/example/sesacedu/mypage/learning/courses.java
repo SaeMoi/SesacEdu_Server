@@ -49,7 +49,8 @@ public class courses {
         this.jwtUtil = jwtUtil;
     }
 
-    @GetMapping("/mypage/courses")
+    // /mypage/lectures: API 명세 경로 (프런트 통합 브랜치가 사용). /mypage/courses: 기존 경로
+    @GetMapping({"/mypage/courses", "/mypage/lectures"})
     public ResponseEntity<Map<String, Object>> list(@RequestParam(required = false) String status,
                                                     @RequestParam(required = false) String sort,
                                                     @RequestParam(required = false) String page,
