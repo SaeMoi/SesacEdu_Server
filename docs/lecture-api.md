@@ -25,17 +25,15 @@ JDK 11 에서 실행한다.
 ## 인증
 
 - 요청 헤더 `Authorization: Bearer {JWT}`.
-- 검증 순서: JWT 서명·만료 → `users.token` 에 저장된 토큰과 같은지 → `users.status` 가 `restricted` 가 아닌지.
-- 로그인할 때 저장한 토큰만 유효하다. 다시 로그인하면 이전 토큰은 401, 로그아웃해서 `token` 이 NULL 이 되면 401 이다.
-- 개발용 `GET /dev/token?userId={번호}&auth={0~4}` 는 토큰을 만들어 `users.token` 에 저장하고 돌려준다. 없는 사용자는 404.
+- 검증: JWT 서명·만료만 본다. 로그인 API 와 같은 방식이며 서버는 토큰을 저장하지 않는다(DB 조회 없음).
+- 로그아웃하거나 다시 로그인해도 이전 토큰은 만료까지 쓸 수 있다.
+- 개발용 `GET /dev/token?userId={번호}&auth={0~4}` 는 로그인 없이 토큰을 만들어 돌려준다.
 
 | 상황 | 응답 |
 |---|---|
 | 헤더 없음 | 공개 API 는 비로그인으로 처리, 그 밖은 401 `UNAUTHORIZED` |
 | Bearer 형식 아님·서명 틀림 | 401 `UNAUTHORIZED` |
 | 만료 | 401 `TOKEN_EXPIRED` |
-| DB 토큰과 다름·NULL | 401 `TOKEN_NOT_ACTIVE` |
-| 제한된 계정 | 403 `ACCOUNT_RESTRICTED` |
 
 ## 접근 규칙
 

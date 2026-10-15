@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,11 +25,9 @@ import java.util.Map;
 public class TestTokenController {
 
     private final JwtUtil jwtUtil;
-    private final JdbcTemplate jdbcTemplate;
 
-    public TestTokenController(JwtUtil jwtUtil, JdbcTemplate jdbcTemplate) {
+    public TestTokenController(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
-        this.jdbcTemplate = jdbcTemplate;
     }
 
     /**
@@ -48,16 +45,6 @@ public class TestTokenController {
             @RequestParam(value = "auth", defaultValue = "2") int auth) {
 
         String token = jwtUtil.createLoginToken(userId, auth);   // 바뀐 시그니처: (userId, auth)
-
-        // 로그인과 같게 발급한 토큰을 users.token 에 저장한다. 검증기가 이 값과 대조한다.
-        // 같은 사용자의 이전 토큰은 이 시점부터 쓸 수 없다.
-        int saved = jdbcTemplate.update("UPDATE users SET token = ? WHERE user_id = ?", token, userId);
-        if (saved == 0) {
-            return ResponseEntity.status(404).body(Map.of(
-                    "code", "USER_NOT_FOUND",
-                    "message", "없는 사용자입니다."));
-        }
-
         return ResponseEntity.ok(Map.of(
                 "userId", userId,
                 "auth", auth,
