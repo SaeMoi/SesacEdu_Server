@@ -99,7 +99,7 @@ public class LectureRepository {
     public LectureDetail findDetail(int lid, long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT Lid, name, category, lvl, headline, summary, Lprice, status, " +
+                    "SELECT Lid, name, category, LLEVEL AS lvl, headline, summary, Lprice, status, " +
                             "       picture, video_filename, material_filename " +
                             "FROM lectures WHERE Lid = ? AND user_id = ?",
                     DETAIL_MAPPER, lid, instructorUserId);
