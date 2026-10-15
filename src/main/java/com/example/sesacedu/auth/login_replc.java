@@ -1,7 +1,7 @@
 package com.example.sesacedu.auth;
 
-import com.example.sesacedu.global.JwtUtil;
-import com.example.sesacedu.global.JwtUtil.JwtAuthException;
+import com.example.sesacedu.global.config.JwtUtil;
+import com.example.sesacedu.global.config.JwtUtil.JwtAuthException;
 import io.jsonwebtoken.Claims;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;

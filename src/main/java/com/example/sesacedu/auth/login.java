@@ -1,6 +1,6 @@
 package com.example.sesacedu.auth;
 
-import com.example.sesacedu.global.JwtUtil;
+import com.example.sesacedu.global.config.JwtUtil;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -49,7 +49,7 @@ public class login {
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> doLogin(@RequestBody(required = false) LoginRequest req, HttpServletRequest request) {
         if (req == null) req = new LoginRequest();
-        
+
         // 1. 입력 검증. email은 공백 제거 + 소문자 변환, pw는 형식 검증 없이 길이만
         String email = req.email == null ? "" : req.email.trim().toLowerCase(Locale.ROOT);
         String pw = req.pw == null ? "" : req.pw;
@@ -79,8 +79,7 @@ public class login {
         long userId = ((Number) user.get("USER_ID")).longValue();
         int auth = ((Number) user.get("AUTH")).intValue();
         String token = jwtUtil.createLoginToken(userId, auth);
-        jdbc.update("UPDATE users SET last_login_at = SYSTIMESTAMP, last_login_ip = ? WHERE user_id = ?",
-                request.getRemoteAddr(), userId);
+
 
         Map<String, Object> member = new LinkedHashMap<>();
         member.put("memberId", userId);

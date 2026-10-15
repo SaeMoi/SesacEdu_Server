@@ -29,6 +29,9 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
     runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
 
+    // 이메일 인증 코드에서 사용하는 메일 발송 라이브러리
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
     // JWT (JwtUtil)
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
