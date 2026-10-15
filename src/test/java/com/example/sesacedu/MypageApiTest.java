@@ -52,7 +52,7 @@ class MypageApiTest {
     void setUp() {
         jdbc.update("DELETE FROM users");
         String md5 = DigestUtils.md5DigestAsHex(PW.getBytes(StandardCharsets.UTF_8));
-        jdbc.update("INSERT INTO users (mail, pw, uname, nickname, phone, b_date, address, auth, profile_image, created) "
+        jdbc.update("INSERT INTO users (mail, pw, uname, nickname, phone, b_date, address, auth, picture, created) "
                         + "VALUES (?, ?, ?, ?, ?, DATE '2000-03-15', ?, 1, ?, TIMESTAMP '2026-10-01 09:00:00')",
                 "student@example.test", md5, "김새싹", "새싹보안", "01012345678", "서울시 어딘가", "15_profile.png");
         jdbc.update("INSERT INTO users (mail, pw, uname, nickname, auth) VALUES (?, ?, ?, ?, 0)",

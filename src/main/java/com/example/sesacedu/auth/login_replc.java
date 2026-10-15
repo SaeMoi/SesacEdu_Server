@@ -1,7 +1,7 @@
 package com.example.sesacedu.auth;
 
-import com.example.sesacedu.global.config.JwtUtil;
-import com.example.sesacedu.global.config.JwtUtil.JwtAuthException;
+import com.example.sesacedu.global.JwtUtil;
+import com.example.sesacedu.global.JwtUtil.JwtAuthException;
 import io.jsonwebtoken.Claims;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +60,7 @@ public class login_replc {
         // 5단계
         int auth = ((Number) user.get("AUTH")).intValue();
         String token = jwtUtil.reissue(claims, auth);
+        jdbc.update("UPDATE users SET token = ? WHERE user_id = ?", token, userId);   // 마지막 발급 토큰 저장
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("reissueNum", jwtUtil.getReissueNum(claims) - 1);

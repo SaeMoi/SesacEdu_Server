@@ -1,6 +1,6 @@
 package com.example.sesacedu.auth;
 
-import com.example.sesacedu.global.config.JwtUtil;
+import com.example.sesacedu.global.JwtUtil;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -10,7 +10,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -25,7 +24,7 @@ import java.util.regex.Pattern;
  * POST /login (Notion API 명세서: 로그인).
  *
  * 처리 순서: 1. 입력 검증(400 INVALID_INPUT) → 2. mail로 회원 조회, 없거나 MD5 불일치면 401 LOGIN_FAILED
- * → 3. status = 'restricted'면 403 ACCOUNT_RESTRICTED → 4. JWT 발급, last_login_at·last_login_ip 갱신, 200.
+ * → 3. status = 'restricted'면 403 ACCOUNT_RESTRICTED → 4. JWT 발급, 발급한 토큰을 users.token에 저장, 200.
  * 토큰은 응답 헤더 Authorization: Bearer {JWT}에만 넣고 본문에는 넣지 않는다.
  *
  * 의도된 취약점 (모의해킹용): salt 없는 MD5, 로그인 잠금·횟수 제한 없음.
@@ -47,9 +46,9 @@ public class login {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<Map<String, Object>> doLogin(@RequestBody(required = false) LoginRequest req, HttpServletRequest request) {
+    public ResponseEntity<Map<String, Object>> doLogin(@RequestBody(required = false) LoginRequest req) {
         if (req == null) req = new LoginRequest();
-
+        
         // 1. 입력 검증. email은 공백 제거 + 소문자 변환, pw는 형식 검증 없이 길이만
         String email = req.email == null ? "" : req.email.trim().toLowerCase(Locale.ROOT);
         String pw = req.pw == null ? "" : req.pw;
@@ -75,11 +74,11 @@ public class login {
             return ResponseEntity.status(403).body(body("ACCOUNT_RESTRICTED", "이용이 제한된 계정입니다.", null));
         }
 
-        // 4. JWT 발급 + 마지막 로그인 갱신
+        // 4. JWT 발급 + 마지막 발급 토큰 저장
         long userId = ((Number) user.get("USER_ID")).longValue();
         int auth = ((Number) user.get("AUTH")).intValue();
         String token = jwtUtil.createLoginToken(userId, auth);
-
+        jdbc.update("UPDATE users SET token = ? WHERE user_id = ?", token, userId);
 
         Map<String, Object> member = new LinkedHashMap<>();
         member.put("memberId", userId);

@@ -30,7 +30,7 @@ import java.util.regex.Pattern;
  * 처리 순서: 1. 입력 검증(400 INVALID_INPUT, 틀린 필드를 result.errors에 모두)
  * → 2. EmailAuthStore에서 email의 verificationToken 확인 (일치, 인증 후 30분 이내, 미사용) 아니면 400 INVALID_VERIFICATION
  * → 3. mail 중복 409 DUPLICATE_EMAIL → 4. nickname 중복 409 DUPLICATE_NICKNAME
- * → 5. users INSERT (pw = MD5, auth = 0, status = 'active') 후 메모리 entry 제거(토큰 1회용) → 201 SIGNUP_SUCCESS { memberId }.
+ * → 5. users INSERT (pw = MD5, phone, auth = 0, status = 'active') 후 메모리 entry 제거(토큰 1회용) → 201 SIGNUP_SUCCESS { memberId }.
  * 가입만 하고 토큰은 발급하지 않는다 (프론트가 /login으로 이동). 로그인 전 API라 Authorization 불필요.
  *
  * auth·status는 요청에서 받지 않는다 (요청 클래스에 필드 없음). "auth": 3 을 보내도 무시 → Mass Assignment 없음.
@@ -47,6 +47,8 @@ public class signup {
     private static final Pattern EMAIL = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
     // 8~30자, 영문 + 숫자 + 특수문자 각 1자 이상
     private static final Pattern PW = Pattern.compile("^(?=.*[A-Za-z])(?=.*[0-9])(?=.*[^A-Za-z0-9\\s]).{8,30}$");
+    // 하이픈 없이 숫자 10~11자리 (PUT /mypage/profile과 같은 규칙)
+    private static final Pattern PHONE = Pattern.compile("^[0-9]{10,11}$");
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("uuuu-MM-dd").withResolverStyle(ResolverStyle.STRICT);
     private static final int EMAIL_MAX = 100;
     private static final int NAME_MAX = 10;
@@ -73,6 +75,7 @@ public class signup {
         String pwcheck = req.pwcheck == null ? "" : req.pwcheck;
         String name = trim(req.name);
         String nickname = trim(req.nickname);
+        String phone = trim(req.phone);
         String bDate = trim(req.b_date);
         String address = trim(req.address);
 
@@ -89,6 +92,8 @@ public class signup {
         else if (name.length() > NAME_MAX) errors.add(error("name", "이름은 최대 10자입니다."));
         if (nickname.isEmpty()) errors.add(error("nickname", "닉네임을 입력해주세요."));
         else if (nickname.length() < NICK_MIN || nickname.length() > NICK_MAX) errors.add(error("nickname", "닉네임은 2~20자입니다."));
+        if (phone.isEmpty()) errors.add(error("phone", "연락처를 입력해주세요."));
+        else if (!PHONE.matcher(phone).matches()) errors.add(error("phone", "하이픈 없이 숫자 10~11자리로 입력해주세요."));
         if (bDate.isEmpty()) errors.add(error("b_date", "생년월일을 입력해주세요."));
         else {
             try {
@@ -120,9 +125,9 @@ public class signup {
         // 5. 가입 (바인드 변수만 사용. 문자열 연결로 바꾸면 SQLi 지점이 됨)
         String md5 = DigestUtils.md5DigestAsHex(pw.getBytes(StandardCharsets.UTF_8));
         try {
-            jdbc.update("INSERT INTO users (mail, pw, uname, nickname, b_date, address, auth, status) "
-                            + "VALUES (?, ?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, 0, 'active')",
-                    email, md5, name, nickname, bDate, address);
+            jdbc.update("INSERT INTO users (mail, pw, uname, nickname, phone, b_date, address, auth, status, created) "
+                            + "VALUES (?, ?, ?, ?, ?, TO_DATE(?, 'YYYY-MM-DD'), ?, 0, 'active', LOCALTIMESTAMP)",
+                    email, md5, name, nickname, phone, bDate, address);
         } catch (DuplicateKeyException e) {
             return duplicateEmail();                     // 3단계와 INSERT 사이에 같은 이메일이 먼저 가입한 경우
         }
@@ -186,6 +191,7 @@ public class signup {
         public String pwcheck;
         public String name;
         public String nickname;
+        public String phone;
         public String b_date;
         public String address;
     }

@@ -109,7 +109,7 @@ class LoginApiTest {
 
     // ------------------------------------------------------------ POST /login
 
-    @Test @DisplayName("로그인 200: 토큰은 Authorization 헤더에만, payload sub/role/reissue_num 2, name 없음, last_login 갱신")
+    @Test @DisplayName("로그인 200: 토큰은 Authorization 헤더에만, payload sub/role/reissue_num 2, name 없음, users.token에 저장")
     void loginSuccess() throws Exception {
         MvcResult r = mvc.perform(post("/login").contentType(MediaType.APPLICATION_JSON)
                         .content(json("  Jade@Example.COM ", PW)))      // 공백 제거 + 소문자 변환
@@ -129,7 +129,8 @@ class LoginApiTest {
         assertEquals("STUDENT", c.get("role"));
         assertEquals(2, ((Number) c.get("reissue_num")).intValue());
         assertNull(c.get("name"));
-        assertNotNull(jdbc.queryForObject("SELECT last_login_ip FROM users WHERE user_id = ?", String.class, studentId));
+        assertEquals(r.getResponse().getHeader("Authorization").substring("Bearer ".length()),
+                jdbc.queryForObject("SELECT token FROM users WHERE user_id = ?", String.class, studentId));
     }
 
     @Test @DisplayName("로그인 401 LOGIN_FAILED: 비밀번호 틀림과 없는 이메일이 같은 응답")
@@ -187,7 +188,7 @@ class LoginApiTest {
         mvc.perform(post("/login").contentType(MediaType.APPLICATION_JSON).content(json("ban@example.com", "wrong")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("LOGIN_FAILED"));
-        assertNull(jdbc.queryForObject("SELECT last_login_ip FROM users WHERE user_id = ?", String.class, restrictedId));
+        assertNull(jdbc.queryForObject("SELECT token FROM users WHERE user_id = ?", String.class, restrictedId));
     }
 
     @Test @DisplayName("로그인 잠금 없음 (의도된 취약점): 20번 틀려도 맞는 비밀번호면 200")
@@ -218,6 +219,8 @@ class LoginApiTest {
         assertEquals("INSTRUCTOR", c.get("role"));
         assertEquals(1, ((Number) c.get("reissue_num")).intValue());
         assertTrue(c.getExpiration().after(new Date()));
+        assertEquals(r.getResponse().getHeader("Authorization").substring("Bearer ".length()),
+                jdbc.queryForObject("SELECT token FROM users WHERE user_id = ?", String.class, studentId));
     }
 
     @Test @DisplayName("재발급 오류 코드: TOKEN_NOT_EXPIRED / REISSUE_LIMIT / REISSUE_EXPIRED / UNAUTHORIZED / ACCOUNT_RESTRICTED")

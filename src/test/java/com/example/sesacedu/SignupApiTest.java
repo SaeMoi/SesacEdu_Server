@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
@@ -119,7 +120,7 @@ class SignupApiTest {
     static String signupJson(String email, String token, String nickname) {
         return "{\"email\":\"" + email + "\",\"verificationToken\":\"" + token + "\",\"pw\":\"" + PW
                 + "\",\"pwcheck\":\"" + PW + "\",\"name\":\"홍지승\",\"nickname\":\"" + nickname
-                + "\",\"b_date\":\"1998-01-01\",\"address\":\"서울특별시 노원구 공릉로 232\"}";
+                + "\",\"phone\":\"01011112222\",\"b_date\":\"1998-01-01\",\"address\":\"서울특별시 노원구 공릉로 232\"}";
     }
 
     /** 가장 최근에 보낸 가짜 메일에서 6자리 인증번호 꺼내기 */
@@ -325,11 +326,13 @@ class SignupApiTest {
         long memberId = ((Number) JsonPath.read(body, "$.result.memberId")).longValue();
 
         Map<String, Object> row = jdbc.queryForMap(
-                "SELECT mail, pw, uname, nickname, b_date, address, auth, status FROM users WHERE user_id = ?", memberId);
+                "SELECT mail, pw, uname, nickname, phone, b_date, address, auth, status, created FROM users WHERE user_id = ?", memberId);
         assertEquals("new@example.com", row.get("MAIL"));
         assertEquals(DigestUtils.md5DigestAsHex(PW.getBytes(StandardCharsets.UTF_8)), row.get("PW"));
         assertEquals("홍지승", row.get("UNAME"));
         assertEquals("jade", row.get("NICKNAME"));
+        assertEquals("01011112222", row.get("PHONE"));
+        assertNotNull(row.get("CREATED"));
         assertTrue(String.valueOf(row.get("B_DATE")).startsWith("1998-01-01"));
         assertEquals(0, ((Number) row.get("AUTH")).intValue());
         assertEquals("active", row.get("STATUS"));
@@ -364,7 +367,7 @@ class SignupApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
                 .andExpect(jsonPath("$.result.errors[*].field", containsInAnyOrder(
-                        "email", "verificationToken", "pw", "pwcheck", "name", "nickname", "b_date", "address")));
+                        "email", "verificationToken", "pw", "pwcheck", "name", "nickname", "phone", "b_date", "address")));
         // 오늘·미래 생년월일, 깨진 JSON
         String token = verifiedToken("h@example.com");
         signup(signupJson("h@example.com", token, "hh").replace("1998-01-01", "2999-01-01"))
@@ -383,6 +386,31 @@ class SignupApiTest {
                     .andExpect(jsonPath("$.result.errors[*].field", org.hamcrest.Matchers.contains("pw")));
         }
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM users", Integer.class));   // 아무것도 가입 안 됨
+    }
+
+    @Test @DisplayName("가입 400 INVALID_INPUT: phone 필수, 하이픈 없이 숫자 10~11자리")
+    void signupPhoneRequired() throws Exception {
+        String token = verifiedToken("p@example.com");
+        String valid = signupJson("p@example.com", token, "pp");
+        signup(valid.replace("\"phone\":\"01011112222\",", ""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
+                .andExpect(jsonPath("$.result.errors[*].field", org.hamcrest.Matchers.contains("phone")))
+                .andExpect(jsonPath("$.result.errors[0].reason").value("연락처를 입력해주세요."));
+        for (String bad : new String[]{"010-1111-2222", "010111", "010111122223", "0101111222a", "   "}) {
+            signup(valid.replace("01011112222", bad))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.result.errors[*].field", org.hamcrest.Matchers.contains("phone")));
+        }
+        assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM users", Integer.class));   // 아무것도 가입 안 됨
+        // 10자리도 허용, GET /mypage에 그대로 보인다
+        signup(valid.replace("01011112222", "0212345678")).andExpect(status().isCreated());
+        String bearer = mvc.perform(post("/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"p@example.com\",\"pw\":\"" + PW + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getHeader("Authorization");
+        mvc.perform(get("/mypage").header("Authorization", bearer))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.phone").value("0212345678"));
     }
 
     @Test @DisplayName("가입 400 INVALID_VERIFICATION: 틀린 토큰, 다른 이메일의 토큰, 인증 후 30분 지남")

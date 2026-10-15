@@ -20,24 +20,28 @@ dependencies {
     providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 
     // Swagger (Boot 2.7 용)
     implementation 'org.springdoc:springdoc-openapi-ui:1.7.0'
 
-    // ↓ 추가: JDBC(JdbcTemplate) + Oracle 드라이버
-    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
-    runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
-
-    // 이메일 인증 코드에서 사용하는 메일 발송 라이브러리
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
-
-    // JWT (JwtUtil)
+    // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
+    testRuntimeOnly 'com.h2database:h2'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// 빌드 결과물은 OneDrive 밖에 둔다 (동기화 중 파일 잠금 방지)
+if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+    buildDir = file("C:/gradle-build/sesacedu")
+} else {
+    buildDir = file("${System.getProperty('user.home')}/gradle-build/sesacedu")
 }

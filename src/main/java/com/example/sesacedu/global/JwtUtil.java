@@ -1,4 +1,4 @@
-package com.example.sesacedu.global.config;
+package com.example.sesacedu.global;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
