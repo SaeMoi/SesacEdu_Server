@@ -123,7 +123,7 @@ public class LectureRepository {
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(connection -> {
             PreparedStatement ps = connection.prepareStatement(
-                    "INSERT INTO lectures (user_id, name, category, lvl, headline, summary, Lprice, status, created) " +
+                    "INSERT INTO lectures (user_id, name, category, LLEVEL, headline, summary, Lprice, status, created) " +
                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, SYSTIMESTAMP)",
                     new String[]{"Lid"});
             ps.setLong(1, instructorUserId);
@@ -144,7 +144,7 @@ public class LectureRepository {
 
     public int updateBasic(int lid, LectureSaveRequest req, String status) {
         return jdbcTemplate.update(
-                "UPDATE lectures SET name = ?, category = ?, lvl = ?, headline = ?, summary = ?, " +
+                "UPDATE lectures SET name = ?, category = ?, LLEVEL = ?, headline = ?, summary = ?, " +
                         "Lprice = ?, status = ? WHERE Lid = ?",
                 req.getName(), req.getCategory(), req.getLevel(), req.getHeadline(), req.getSummary(),
                 req.getPrice() == null ? 0 : req.getPrice(), status, lid);
