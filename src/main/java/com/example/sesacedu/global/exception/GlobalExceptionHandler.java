@@ -13,8 +13,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * 컨트롤러마다 try-catch 를 쓰지 않는 이유는 두 가지다. 오류 응답 형식이 한 군데서
  * 결정되고, 처리하지 않은 예외가 그대로 밖으로 나가는 일이 없어진다. 자바 예외가
  * 그대로 나가면 스택 트레이스와 SQL 문이 응답에 실려 내부 구조가 드러난다.
+ *
+ * 적용 범위는 강의 API(student 패키지)로 한정한다. 범위를 열어 두면 마이페이지처럼
+ * 자기 오류 형식({code, message, result})과 처리 순서(토큰 먼저)를 가진 다른 패키지의
+ * 예외까지 이 클래스가 가로채 응답 형식이 바뀐다.
  */
-@RestControllerAdvice
+@RestControllerAdvice(basePackages = "com.example.sesacedu.student")
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(ApiException.class)

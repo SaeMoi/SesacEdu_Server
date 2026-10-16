@@ -12,7 +12,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /** 실제 Spring 설정·빈 등록까지 검증. Oracle 저장소만 대체한다. */
-@SpringBootTest
+// 허용 출처는 설정값(app.cors.allowed-origins)으로 정한다. 프론트 개발 서버 주소를 넣고 확인한다.
+@SpringBootTest(properties = "app.cors.allowed-origins=http://localhost:5173")
 @AutoConfigureMockMvc
 class LectureApplicationTest {
     @Autowired MockMvc mvc;
