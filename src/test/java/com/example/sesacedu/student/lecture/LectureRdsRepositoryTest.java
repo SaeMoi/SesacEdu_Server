@@ -1,5 +1,6 @@
 package com.example.sesacedu.student.lecture;
 
+import com.example.sesacedu.student.lecture.dto.ChapterResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LectureRdsRepositoryTest {
 
     @Autowired LectureRepository lectures;
+    @Autowired LectureClassroomRepository classroom;
 
     // ───────── 읽기 ─────────
 
@@ -49,7 +51,22 @@ class LectureRdsRepositoryTest {
         assertThat(lectures.findOpenById(39)).isEmpty();
     }
 
+    @Test
+    void 수강_화면은_공개와_내려간_강의만_열린다() {
+        assertThat(classroom.findForEnrolled(1)).isPresent();
+        assertThat(classroom.findForEnrolled(36)).isPresent();
+        assertThat(classroom.findForEnrolled(39)).isEmpty();
+    }
 
+    @Test
+    void 목차는_시작_초_순서로_5개다() {
+        List<ChapterResponse> chapters = classroom.findChapters(1);
+        assertThat(chapters).hasSize(5);
+        assertThat(chapters.get(0).getStartSec()).isZero();
+        for (int i = 1; i < chapters.size(); i++) {
+            assertThat(chapters.get(i).getStartSec()).isGreaterThan(chapters.get(i - 1).getStartSec());
+        }
+    }
 
     @Test
     void 수강_여부와_리뷰_건수가_맞는다() {
@@ -60,8 +77,37 @@ class LectureRdsRepositoryTest {
     }
 
 
+    @Test
+    void 제출물을_번호로_찾는다() {
+        assertThat(classroom.findSubmissionById(1)).isPresent();
+        assertThat(classroom.findMySubmission(1, 31)).isPresent();
+    }
+
+    // ───────── 쓰기 (롤백) ─────────
 
 
+    @Test
+    void 과제를_내용만으로_제출하고_고치고_지운다() {
+        int aid = classroom.insertSubmission(2, 41, null, null, "가".repeat(3000));
+        assertThat(aid).isPositive();
 
+        SubmissionRow row = classroom.findSubmissionById(aid).orElseThrow();
+        assertThat(row.getNote()).hasSize(3000);
+        assertThat(row.getWorkFilename()).isNull();
+
+        assertThat(classroom.updateSubmission(aid, "/files/a.pdf", "a.pdf", "수정")).isEqualTo(1);
+        assertThat(classroom.findWorkFile(aid)).isPresent();
+        assertThat(classroom.deleteSubmission(aid)).isEqualTo(1);
+        assertThat(classroom.findSubmissionById(aid)).isEmpty();
+    }
+
+    @Test
+    void 이어보기_위치를_저장하고_수료는_한_번만_된다() {
+        assertThat(classroom.updatePosition(2, 41, 120)).isEqualTo(1);
+        assertThat(lectures.findEnrollment(41, 2).orElseThrow().getPosition()).isEqualTo(120);
+
+        assertThat(classroom.markDone(2, 41)).isEqualTo(1);
+        assertThat(classroom.markDone(2, 41)).isZero();
+    }
 
 }
