@@ -1,6 +1,6 @@
 # 강의 API
 
-강의 목록·상세, 수강 화면(영상·목차·자료·과제·수료)을 다룬다. 데이터는 공유 RDS(Oracle 19)에 있고 다른 DB 는 쓰지 않는다.
+강의 목록·상세, 수강 화면(영상·목차·자료·과제·수료), 리뷰, Q&A 를 다룬다. 데이터는 공유 RDS(Oracle 19)에 있고 다른 DB 는 쓰지 않는다.
 
 ## 실행
 
@@ -40,7 +40,10 @@ JDK 11 에서 실행한다.
 | 구분 | 경로 | 조건 |
 |---|---|---|
 | 공개 | `GET /lectures`, `/lectures/{Lid}`, `/lectures/{Lid}/preview` | `status='open'` 강의만. 없거나 draft·closed 는 404 |
+| 공개 | `GET /lectures/{Lid}/reviews`, `/lectures/{Lid}/qna` | 목록의 비밀글 제목은 작성자·담당 강사가 아니면 `비밀글입니다.` |
+| 비밀글 | `GET /lectures/{Lid}/qna/{qnaid}` | 공개글은 누구나. 비밀글은 비로그인 401, 작성자·담당 강사가 아니면 403 `SECRET_QNA` |
 | 수강자 | `/learn`, `/learn/video`, `/learn/position`, `/complete`, `/material`, `/material/download`, `/assignment`, `/assignments/**` | 로그인 + `enrollments(user_id, Lid)` 행. 없으면 403 `NOT_ENROLLED`. 강의는 open·closed 만 |
+| 수강자 | `POST·PUT·DELETE /reviews`, `POST /qna` | 로그인 + 수강 + 공개 강의 |
 
 ## 엔드포인트
 
@@ -59,6 +62,12 @@ JDK 11 에서 실행한다.
 | POST | `/lectures/{Lid}/assignments` | body `{work, workFilename, note}`. 파일·내용 중 하나 필수, 내용 3000자. 1인 1건(409 `ALREADY_SUBMITTED`) → 201 `{id}`. `work` 가 http·https 링크면 서버가 받아 보관한다(5MB, 막힌 주소 400 `BLOCKED_URL`, 실패 400 `LINK_FETCH_FAILED`) |
 | GET·PUT·DELETE | `/lectures/{Lid}/assignments/{aid}` | 제출물 조회·수정·삭제. 채점 뒤 수정·삭제 409 `ALREADY_SCORED` |
 | GET | `/lectures/{Lid}/assignments/{aid}/file` | 제출 파일. 파일 없이 낸 경우 404 `SUBMISSION_FILE_NOT_FOUND` |
+| GET | `/lectures/{Lid}/reviews?page&size` | `reviews[]`, `page`, `rating`, `reviewCount` |
+| POST·PUT | `/lectures/{Lid}/reviews` | body `{star 1~5, review ≤2000}`. 1인 1건(409 `ALREADY_REVIEWED`) |
+| DELETE | `/lectures/{Lid}/reviews` | 내 리뷰 삭제 → 204 |
+| GET | `/lectures/{Lid}/qna?status=answered\|waiting&page&size` | `questions[]`, `page` |
+| POST | `/lectures/{Lid}/qna` | body `{title ≤200, question ≤4000, secret}` → 201 `{id}` |
+| GET | `/lectures/{Lid}/qna/{qnaid}` | 질문·답변 상세 |
 
 정렬 값: `lid_desc`(= `id_desc`, `default`), `latest`, `price_asc`(= `low`), `price_desc`(= `pric_desc`, `high`). 분류: `개발 기초` `로그 분석` `웹 보안` `네트워크` `클라우드`. 난이도: `입문` `초급` `중급`. `all` 은 필터 없음.
 

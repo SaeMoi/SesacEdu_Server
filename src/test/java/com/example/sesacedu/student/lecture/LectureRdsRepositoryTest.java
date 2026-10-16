@@ -24,6 +24,7 @@ class LectureRdsRepositoryTest {
 
     @Autowired LectureRepository lectures;
     @Autowired LectureClassroomRepository classroom;
+    @Autowired LectureBoardRepository board;
 
     // ───────── 읽기 ─────────
 
@@ -73,9 +74,16 @@ class LectureRdsRepositoryTest {
         assertThat(lectures.findEnrollment(31, 1)).isPresent();
         assertThat(lectures.findEnrollment(31, 40)).isEmpty();
 
-        assertThat(lectures.findReviewSummary(1).getReviewCount()).isPositive();
+        assertThat(lectures.findReviewSummary(1).getReviewCount()).isEqualTo(board.countReviews(1));
+        assertThat(board.findReviews(1, 0, 10)).isNotEmpty();
     }
 
+    @Test
+    void Q_A_답변_상태별_건수의_합이_전체와_같다() {
+        int all = board.countQna(1, null);
+        assertThat(board.countQna(1, "answered") + board.countQna(1, "waiting")).isEqualTo(all);
+        assertThat(board.findQna(1, 0, 50, null)).hasSize(all);
+    }
 
     @Test
     void 제출물을_번호로_찾는다() {
@@ -85,6 +93,16 @@ class LectureRdsRepositoryTest {
 
     // ───────── 쓰기 (롤백) ─────────
 
+    @Test
+    void 리뷰를_쓰고_고치고_지운다() {
+        assertThat(board.existsReview(2, 41)).isFalse();
+
+        board.insertReview(2, 41, 5, "롤백되는 테스트 리뷰");
+        assertThat(board.existsReview(2, 41)).isTrue();
+        assertThat(board.updateReview(2, 41, 3, "수정")).isEqualTo(1);
+        assertThat(board.deleteReview(2, 41)).isEqualTo(1);
+        assertThat(board.existsReview(2, 41)).isFalse();
+    }
 
     @Test
     void 과제를_내용만으로_제출하고_고치고_지운다() {
@@ -110,4 +128,10 @@ class LectureRdsRepositoryTest {
         assertThat(classroom.markDone(2, 41)).isZero();
     }
 
+    @Test
+    void 질문을_쓰면_번호를_돌려준다() {
+        int qid = board.insertQna(2, 41, "롤백되는 테스트 질문", "본문", true);
+        assertThat(qid).isPositive();
+        assertThat(board.findQnaDetail(2, qid)).isPresent();
+    }
 }
