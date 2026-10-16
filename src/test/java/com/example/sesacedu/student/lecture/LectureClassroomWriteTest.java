@@ -380,4 +380,29 @@ class LectureClassroomWriteTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("SUBMISSION_FILE_NOT_FOUND"));
     }
+
+    // ───────── 자료 폴더의 다른 파일 · 링크 제출 ─────────
+
+    @Test
+    void 자료_폴더의_다른_파일을_이름으로_받는다() throws Exception {
+        Files.write(root.resolve("files/1/appendix.pdf"), "%PDF-1.4".getBytes(StandardCharsets.US_ASCII));
+        enrolled(lectureOne(), new EnrollmentProgress(false, 0));
+
+        mvcAs(10).perform(get("/lectures/1/material/download").param("file", "appendix.pdf")
+                        .header("Authorization", TOKEN))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", "attachment; filename=\"appendix.pdf\""));
+    }
+
+    @Test
+    void 막힌_주소의_링크로_내면_400이고_저장하지_않는다() throws Exception {
+        enrolled(lectureOne(), new EnrollmentProgress(false, 0));
+
+        mvcAs(10).perform(post("/lectures/1/assignments").header("Authorization", TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"work\":\"http://localhost/a.pdf\",\"note\":\"메모\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("BLOCKED_URL"));
+        verify(classroomRepository, never()).insertSubmission(anyInt(), anyInt(), any(), any(), any());
+    }
 }

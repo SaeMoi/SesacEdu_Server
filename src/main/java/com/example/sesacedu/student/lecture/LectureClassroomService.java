@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
+import java.util.Locale;
 
 /**
  * 수강 화면(영상 · 자료 · 과제 · 이어보기 · 수료) 처리.
@@ -113,8 +114,14 @@ public class LectureClassroomService {
     }
 
     /** GET /lectures/{Lid}/material/download — 강의 자료 파일. */
-    public StoredFile materialFile(int lid, CurrentUser currentUser) {
+    public StoredFile materialFile(int lid, CurrentUser currentUser, String file) {
         ClassroomRow lecture = requireEnrolled(lid, currentUser).lecture;
+        // file 을 보내면 같은 자료 폴더 안의 다른 파일(부록 등)을 이름으로 받는다.
+        if (file != null && !file.isEmpty() && lecture.getMaterial() != null) {
+            String dir = lecture.getMaterial().substring(0, lecture.getMaterial().lastIndexOf('/') + 1);
+            Path path = storage.resolve(dir + file, "MATERIAL_NOT_FOUND", "등록된 강의 자료가 없습니다.");
+            return new StoredFile(path, path.getFileName().toString());
+        }
 
         Path path = storage.resolve(lecture.getMaterial(), "MATERIAL_NOT_FOUND", "등록된 강의 자료가 없습니다.");
         String name = lecture.getMaterialFilename() == null ? lecture.getName() : lecture.getMaterialFilename();
@@ -156,6 +163,7 @@ public class LectureClassroomService {
                     "이미 제출했습니다. 수정으로 바꿔 주세요.");
         }
 
+        storeLink(lid, request);
         int aid = classroomRepository.insertSubmission(lid, currentUser.getUserId(),
                 request.getWork(), request.getWorkFilename(), request.getNote());
         return new CreatedResponse(aid);
@@ -177,6 +185,7 @@ public class LectureClassroomService {
             throw new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED", "채점이 끝난 제출물은 수정할 수 없습니다.");
         }
 
+        storeLink(lid, request);
         classroomRepository.updateSubmission(aid, request.getWork(), request.getWorkFilename(), request.getNote());
         return toSubmissionResponse(lid, findSubmission(aid));
     }
@@ -202,6 +211,20 @@ public class LectureClassroomService {
 
         Path path = storage.resolve(file[0], "SUBMISSION_FILE_NOT_FOUND", "제출한 파일이 없습니다.");
         return new StoredFile(path, file[1] == null ? "submission" : file[1]);
+    }
+
+    /** 링크(http·https)로 낸 과제는 서버가 받아 보관하고, 보관한 경로로 바꿔 저장한다. */
+    private void storeLink(int lid, AssignmentSubmitRequest request) {
+        String work = request.getWork();
+        String lower = work == null ? "" : work.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return;
+        }
+        if (isBlank(request.getWorkFilename())) {
+            String name = work.substring(work.lastIndexOf('/') + 1);
+            request.setWorkFilename(name.isEmpty() ? "link" : name.substring(0, Math.min(255, name.length())));
+        }
+        request.setWork(storage.saveFromUrl(lid, work));
     }
 
     private SubmissionRow findSubmission(int aid) {

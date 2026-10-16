@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 
@@ -91,12 +92,15 @@ public class LectureClassroomController {
     }
 
     @Operation(summary = "강의 자료 다운로드",
-            description = "수강 중인 사람만 받을 수 있다. 원본 파일명으로 저장되게 보낸다.")
+            description = "수강 중인 사람만 받을 수 있다. 원본 파일명으로 저장되게 보낸다. "
+                    + "file 을 보내면 같은 자료 폴더의 다른 파일(부록 등)을 받는다.")
     @GetMapping("/material/download")
     public ResponseEntity<Resource> materialDownload(@PathVariable("lid") int lid,
+                                                     @Parameter(description = "자료 폴더 안의 파일 이름. 없으면 기본 자료")
+                                                     @RequestParam(value = "file", required = false) String file,
                                                      @Parameter(hidden = true) CurrentUser currentUser) {
-        StoredFile file = classroomService.materialFile(lid, currentUser);
-        return fileResponses.send(file, true);
+        StoredFile stored = classroomService.materialFile(lid, currentUser, file);
+        return fileResponses.send(stored, true);
     }
 
     @Operation(summary = "내 과제 파일 다운로드",
@@ -110,7 +114,8 @@ public class LectureClassroomController {
 
     @Operation(summary = "과제 제출",
             description = "수강자만 제출할 수 있다. 강의당 한 번만 낼 수 있고, 이미 냈으면 409 다. "
-                    + "파일 자체가 아니라 업로드가 끝난 뒤의 경로와 원본 파일명을 받는다.")
+                    + "파일 자체가 아니라 업로드가 끝난 뒤의 경로와 원본 파일명을 받는다. "
+                    + "work 에 http·https 링크를 보내면 서버가 그 파일을 받아 보관한다.")
     @PostMapping("/assignments")
     // 새로 만들었으므로 200 이 아니라 201 로 답한다.
     @ResponseStatus(HttpStatus.CREATED)
