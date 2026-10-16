@@ -65,4 +65,10 @@ class LectureFileStorageTest {
         assertThat(Files.isSameFile(storage.resolve(encoded, "X", "없음"), root.resolve("files/1/자료.pdf"))).isTrue();
     }
 
+    @Test
+    void 서버_자신을_가리키는_링크는_받지_않는다() {
+        assertThatThrownBy(() -> storage.saveFromUrl(1, "http://localhost/a.pdf"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getCode()).isEqualTo("BLOCKED_URL"));
+    }
 }

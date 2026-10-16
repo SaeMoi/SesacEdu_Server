@@ -6,10 +6,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
+import java.net.URLConnection;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.UUID;
 
 /**
  * DB 에 적힌 파일 경로(예: /files/videos/a.mp4)를 저장소 폴더 아래 실제 파일로 바꾼다.
@@ -18,6 +24,10 @@ import java.nio.file.Paths;
 @Component
 public class LectureFileStorage {
 
+    // 링크로 받는 파일의 크기 한도. 큰 파일로 디스크가 차는 것을 막는다.
+    private static final int MAX_LINK_BYTES = 5 * 1024 * 1024;
+    // 서버 자신이나 클라우드 메타데이터 주소로는 요청하지 않는다.
+    private static final String[] BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"};
 
     private final String root;
 
@@ -55,6 +65,34 @@ public class LectureFileStorage {
             throw new ApiException(HttpStatus.NOT_FOUND, notFoundCode, notFoundMessage);
         }
         return file.toPath();
+    }
+
+    /**
+     * 링크(http·https)로 낸 과제 파일을 받아 저장소에 보관하고, 보관한 경로를 돌려준다.
+     * 파일 이름은 서버가 정한다(UUID). 원래 이름은 workFilename 에 남는다.
+     */
+    public String saveFromUrl(int lid, String link) {
+        for (String host : BLOCKED_HOSTS) {
+            if (link.contains(host)) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "BLOCKED_URL", "사용할 수 없는 링크입니다.");
+            }
+        }
+        String stored = "/submissions/" + lid + "/" + UUID.randomUUID();
+        try {
+            URLConnection conn = new URL(link).openConnection();
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+            byte[] body;
+            try (InputStream in = conn.getInputStream()) {
+                body = in.readNBytes(MAX_LINK_BYTES);
+            }
+            Path target = Paths.get(root, stored);
+            Files.createDirectories(target.getParent());
+            Files.write(target, body);
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "LINK_FETCH_FAILED", "링크에서 파일을 받지 못했습니다.");
+        }
+        return stored;
     }
 
     /** 설정된 저장소 폴더. */
