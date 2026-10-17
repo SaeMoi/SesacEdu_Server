@@ -148,7 +148,7 @@ class MypageLearningApiTest {
                 .andExpect(jsonPath("$.result.courses[2].category.name").value("가상화"))
                 .andExpect(jsonPath("$.result.courses[2].enrolledAt").value(nullValue()))
                 .andExpect(jsonPath("$.result.page.number").value(0))
-                .andExpect(jsonPath("$.result.page.size").value(10))
+                .andExpect(jsonPath("$.result.page.size").value(5))
                 .andExpect(jsonPath("$.result.page.totalElements").value(3))
                 .andExpect(jsonPath("$.result.page.totalPages").value(1))
                 .andExpect(jsonPath("$.result.page.hasNext").value(false));

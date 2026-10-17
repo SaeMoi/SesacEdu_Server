@@ -31,6 +31,9 @@ import static com.example.sesacedu.global.ApiResponse.*;
 @RestController
 public class qna {
 
+    /** 한 페이지 기본 개수 (Kim 2026-10-17: 마이페이지 목록은 5개씩, 페이지 번호로 이동) */
+    static final int PAGE_SIZE = 5;
+
     private final JdbcTemplate jdbc;
     private final JwtUtil jwtUtil;
 
@@ -60,7 +63,7 @@ public class qna {
         }
         Integer pageNo = parseInt(page, 0);
         if (pageNo == null || pageNo < 0) errors.add(error("page", "0 이상의 정수여야 합니다."));
-        Integer pageSize = parseInt(size, 10);
+        Integer pageSize = parseInt(size, PAGE_SIZE);
         if (pageSize == null || pageSize < 1 || pageSize > 50) errors.add(error("size", "1~50 사이의 정수여야 합니다."));
         if (!errors.isEmpty()) {
             Map<String, Object> result = new LinkedHashMap<>();

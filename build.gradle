@@ -33,6 +33,9 @@ dependencies {
     runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
     testRuntimeOnly 'com.h2database:h2'
     implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // 커뮤니티(/forum) 게시글 HTML 정리·요약
+    implementation 'org.jsoup:jsoup:1.17.2'
 }
 
 tasks.named('test') {
