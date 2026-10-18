@@ -103,7 +103,9 @@ public class buy_order {
         if (!errors.isEmpty()) return invalidInput(errors);
 
         // 3~4. 금액 계산 + 검증 (cpn·pnt와 같은 quote)
-        buy.Quote q = buy.quote(jdbc, userId, ids, cid);
+        // 바로 구매(direct: true)면 장바구니에 없는 강좌도 주문할 수 있다 (Kim 2026-10-18)
+        boolean direct = Boolean.TRUE.equals(req.direct);
+        buy.Quote q = buy.quote(jdbc, userId, ids, cid, direct);
         if (q.error != null) {
             log.info("order rejected user={} code={}", userId, q.error.getBody() == null ? null : q.error.getBody().get("code"));
             return q.error;
@@ -178,7 +180,7 @@ public class buy_order {
             return buy.pointError(q, point);
         }
         if ("CART_CHANGED".equals(done)) {
-            return buy.cartChanged(ids, buy.orderPrices(jdbc, userId, ids));
+            return buy.cartChanged(ids, buy.orderPrices(jdbc, userId, ids, direct));
         }
         log.info("order completed (0 won) oid={} user={}", done, userId);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -250,11 +252,13 @@ public class buy_order {
         return n != null && n > 0 ? n : null;
     }
 
-    /** 요청 본문 { courseIds, couponId, usePoint, payMethod }. 형식 오류를 field 단위로 알려 주려고 Object로 받는다 */
+    /** 요청 본문 { courseIds, couponId, usePoint, payMethod, direct }. 형식 오류를 field 단위로 알려 주려고 Object로 받는다 */
     public static class OrderRequest {
         public Object courseIds;
         public Object couponId;
         public Object usePoint;
         public Object payMethod;
+        /** true면 바로 구매 (장바구니 조건 없음). 생략·그 밖의 값은 장바구니 기준 */
+        public Object direct;
     }
 }

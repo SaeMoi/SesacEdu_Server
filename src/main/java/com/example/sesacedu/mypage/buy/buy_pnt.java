@@ -47,6 +47,7 @@ public class buy_pnt {
     @GetMapping("/mypage/buy/pnt")
     public ResponseEntity<Map<String, Object>> apply(@RequestParam(required = false) String courseIds,
                                                      @RequestParam(required = false) String couponId,
+                                                     @RequestParam(required = false) String direct,
                                                      @RequestParam(required = false) String usePoint,
                                                      HttpServletRequest request) {
         // 1. JWT 검증 (쿼리 검증보다 먼저)
@@ -66,7 +67,7 @@ public class buy_pnt {
         if (!errors.isEmpty()) return invalidInput(errors);
 
         // 3~5. 주문 대상 + 쿠폰 + 포인트 한도 (POST /mypage/buy와 같은 계산)
-        buy.Quote q = buy.quote(jdbc, userId, ids, cid);
+        buy.Quote q = buy.quote(jdbc, userId, ids, cid, buy.isDirect(direct));
         if (q.error != null) return q.error;
         ResponseEntity<Map<String, Object>> invalidPoint = buy.pointError(q, point);
         if (invalidPoint != null) return invalidPoint;

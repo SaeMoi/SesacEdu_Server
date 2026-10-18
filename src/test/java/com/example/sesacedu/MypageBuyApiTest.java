@@ -482,4 +482,43 @@ class MypageBuyApiTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"));
     }
+
+    // ------------------------------------------------------------ 바로 구매 (direct=true, 장바구니 없이)
+
+    @Test @DisplayName("바로 구매: 장바구니에 없는 강좌도 direct=true면 조회·쿠폰·주문 가능, 장바구니는 그대로")
+    void directBuy() throws Exception {
+        // 16은 open이고 내 장바구니에 없음
+        mvc.perform(get("/mypage/buy?courseIds=16&direct=true").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items", hasSize(1)))
+                .andExpect(jsonPath("$.result.items[0].courseId").value(16))
+                .andExpect(jsonPath("$.result.items[0].purchasable").value(true))
+                .andExpect(jsonPath("$.result.summary.productAmount").value(25000));
+        // 이미 수강 중인 15는 purchasable false
+        mvc.perform(get("/mypage/buy?courseIds=15&direct=true").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.items[0].purchasable").value(false));
+        mvc.perform(get("/mypage/buy?direct=true").header("Authorization", bearer(me)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.errors[0].field").value("courseIds"));
+        mvc.perform(get("/mypage/buy/cpn?courseIds=16&couponId=9001&direct=true").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(20000));
+        // direct 없이는 기존처럼 장바구니에 없어서 409
+        mvc.perform(get("/mypage/buy/cpn?courseIds=16&couponId=9001").header("Authorization", bearer(me)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CART_CHANGED"));
+        mvc.perform(post("/mypage/buy").header("Authorization", bearer(me)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"courseIds\":[16],\"payMethod\":\"CARD\",\"direct\":true}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("ORDER_CREATED"))
+                .andExpect(jsonPath("$.result.amount").value(25000));
+        // 바로 구매해도 장바구니(7, 12, 14)는 바뀌지 않음
+        assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ?", Long.class, me));
+        // 이미 수강 중인 강좌는 바로 구매도 409
+        mvc.perform(post("/mypage/buy").header("Authorization", bearer(me)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"courseIds\":[15],\"payMethod\":\"CARD\",\"direct\":true}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CART_CHANGED"));
+    }
 }

@@ -2,6 +2,8 @@ package com.example.sesacedu.mypage;
 
 import com.example.sesacedu.global.JwtUtil;
 import com.example.sesacedu.global.JwtUtil.JwtAuthException;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,6 +24,8 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * 본인 확인 토큰까지 먼저 봐야 하는 profile / password와 업로드 오류를 다루는 edit_prof는 자기 클래스에 처리기를 따로 둔다
  * (클래스 안의 @ExceptionHandler가 이 클래스보다 우선).
  */
+// 강의 쪽 GlobalExceptionHandler(범위 없음)보다 먼저 적용되도록 우선순위를 가장 높게 둔다.
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(basePackages = "com.example.sesacedu.mypage")
 public class MypageExceptionHandler {
 
