@@ -25,6 +25,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -112,13 +114,12 @@ class LectureClassroomWriteTest {
     }
 
     @Test
-    void 수강자가_아니면_403이다() throws Exception {
+    void 수강자가_아니어도_수강화면이_열린다() throws Exception {
         when(classroomRepository.findForEnrolled(1)).thenReturn(Optional.of(lectureOne()));
         when(lectureRepository.findEnrollment(12, 1)).thenReturn(Optional.empty());
 
         mvcAs(12).perform(get("/lectures/1/learn").header("Authorization", TOKEN))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_ENROLLED"));
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -226,13 +227,13 @@ class LectureClassroomWriteTest {
     }
 
     @Test
-    void 덜_봤으면_수료되지_않는다() throws Exception {
-        enrolled(lectureOne(), new EnrollmentProgress(false, 3599));
+    void 하나도_안_봤어도_수료된다() throws Exception {
+        enrolled(lectureOne(), new EnrollmentProgress(false, 0));
+        when(classroomRepository.markDone(1, 10)).thenReturn(1);
 
         mvcAs(10).perform(post("/lectures/1/complete").header("Authorization", TOKEN))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("NOT_WATCHED_ENOUGH"));
-        verify(classroomRepository, never()).markDone(anyInt(), anyInt());
+                .andExpect(status().isOk());
+        verify(classroomRepository).markDone(1, 10);
     }
 
     @Test
@@ -280,13 +281,14 @@ class LectureClassroomWriteTest {
     }
 
     @Test
-    void 내용이_3000자를_넘으면_400이다() throws Exception {
+    void 내용_길이는_재지_않는다() throws Exception {
         enrolled(lectureOne(), new EnrollmentProgress(false, 0));
         String longNote = String.join("", Collections.nCopies(3001, "가"));
 
         mvcAs(10).perform(post("/lectures/1/assignments").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON).content("{\"note\":\"" + longNote + "\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isCreated());
+        verify(classroomRepository).insertSubmission(eq(1), eq(10), isNull(), isNull(), eq(longNote));
     }
 
     @Test
@@ -335,17 +337,16 @@ class LectureClassroomWriteTest {
     }
 
     @Test
-    void 채점된_제출물은_고칠_수도_지울_수도_없다() throws Exception {
+    void 채점된_제출물도_고치고_지울_수_있다() throws Exception {
         enrolled(lectureOne(), new EnrollmentProgress(false, 0));
         when(classroomRepository.findSubmissionById(100)).thenReturn(Optional.of(submission(100, 90)));
 
         mvcAs(10).perform(put("/lectures/1/assignments/100").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON).content(SUBMIT))
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("ALREADY_SCORED"));
+                .andExpect(status().isOk());
         mvcAs(10).perform(delete("/lectures/1/assignments/100").header("Authorization", TOKEN))
-                .andExpect(status().isConflict());
-        verify(classroomRepository, never()).deleteSubmission(anyInt());
+                .andExpect(status().isNoContent());
+        verify(classroomRepository).deleteSubmission(100);
     }
 
     @Test
@@ -395,14 +396,14 @@ class LectureClassroomWriteTest {
     }
 
     @Test
-    void 막힌_주소의_링크로_내면_400이고_저장하지_않는다() throws Exception {
+    void 서버_자신을_가리키는_링크도_그대로_요청한다() throws Exception {
         enrolled(lectureOne(), new EnrollmentProgress(false, 0));
 
+        // 주소를 가리지 않으므로 실제로 접속을 시도한다. 닫힌 포트라 받기에 실패한다.
         mvcAs(10).perform(post("/lectures/1/assignments").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"work\":\"http://localhost/a.pdf\",\"note\":\"메모\"}"))
+                        .content("{\"work\":\"http://127.0.0.1:9/a.pdf\",\"note\":\"메모\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("BLOCKED_URL"));
-        verify(classroomRepository, never()).insertSubmission(anyInt(), anyInt(), any(), any(), any());
+                .andExpect(jsonPath("$.code").value("LINK_FETCH_FAILED"));
     }
 }
