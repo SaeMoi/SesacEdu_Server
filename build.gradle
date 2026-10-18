@@ -11,6 +11,11 @@ description = 'SesacEdu'
 
 sourceCompatibility = '11'
 
+// 소스에 한글 주석이 있어 인코딩을 고정한다. 빌드 환경 기본값이 UTF-8 이 아니면 깨진다.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
 repositories {
     mavenCentral()
 }
@@ -27,6 +32,7 @@ dependencies {
 
     // ↓ 추가: JDBC(JdbcTemplate) + Oracle 드라이버
     implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
     runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
 
     // JWT (JwtUtil)
@@ -37,8 +43,4 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
-}
-
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
 }
