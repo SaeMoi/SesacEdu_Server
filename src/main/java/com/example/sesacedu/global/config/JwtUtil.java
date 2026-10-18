@@ -25,7 +25,7 @@ import java.util.Date;
  * 실패는 {@link JwtAuthException}(HTTP 상태 + code + message)로 던진다. 전역 예외 처리기에서
  * { code, message, result:null } 로 변환하면 된다.
  **/
-@Component
+@Component("instructorJwtUtil")
 public class JwtUtil {
 
     public static final String AUTH_HEADER = "Authorization";
