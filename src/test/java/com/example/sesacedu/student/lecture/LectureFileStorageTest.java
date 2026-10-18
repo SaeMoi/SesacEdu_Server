@@ -66,9 +66,10 @@ class LectureFileStorageTest {
     }
 
     @Test
-    void 서버_자신을_가리키는_링크는_받지_않는다() {
-        assertThatThrownBy(() -> storage.saveFromUrl(1, "http://localhost/a.pdf"))
+    void 서버_자신을_가리키는_링크도_막지_않고_요청한다() {
+        // 차단 목록이 없어 접속을 시도한다. 닫힌 포트라 받기에 실패할 뿐이다.
+        assertThatThrownBy(() -> storage.saveFromUrl(1, "http://127.0.0.1:9/a.pdf"))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).getCode()).isEqualTo("BLOCKED_URL"));
+                .satisfies(e -> assertThat(((ApiException) e).getCode()).isEqualTo("LINK_FETCH_FAILED"));
     }
 }

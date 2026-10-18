@@ -26,9 +26,6 @@ public class LectureFileStorage {
 
     // 링크로 받는 파일의 크기 한도. 큰 파일로 디스크가 차는 것을 막는다.
     private static final int MAX_LINK_BYTES = 5 * 1024 * 1024;
-    // 서버 자신이나 클라우드 메타데이터 주소로는 요청하지 않는다.
-    private static final String[] BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"};
-
     private final String root;
 
     public LectureFileStorage(@Value("${app.storage.root:./storage}") String root) {
@@ -72,11 +69,6 @@ public class LectureFileStorage {
      * 파일 이름은 서버가 정한다(UUID). 원래 이름은 workFilename 에 남는다.
      */
     public String saveFromUrl(int lid, String link) {
-        for (String host : BLOCKED_HOSTS) {
-            if (link.contains(host)) {
-                throw new ApiException(HttpStatus.BAD_REQUEST, "BLOCKED_URL", "사용할 수 없는 링크입니다.");
-            }
-        }
         String stored = "/submissions/" + lid + "/" + UUID.randomUUID();
         try {
             URLConnection conn = new URL(link).openConnection();

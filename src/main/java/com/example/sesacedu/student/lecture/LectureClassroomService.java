@@ -91,11 +91,6 @@ public class LectureClassroomService {
         }
 
         int required = duration == null ? 0 : (int) Math.ceil(duration * COMPLETE_RATIO);
-        int watched = position == null ? 0 : position;
-        if (watched < required) {
-            throw new ApiException(HttpStatus.CONFLICT, "NOT_WATCHED_ENOUGH",
-                    "영상을 끝까지 보셔야 수료로 처리됩니다.");
-        }
 
         if (classroomRepository.markDone(lid, currentUser.getUserId()) == 0) {
             throw new ApiException(HttpStatus.CONFLICT, "ALREADY_COMPLETED", "이미 수료한 강의입니다.");
@@ -175,28 +170,20 @@ public class LectureClassroomService {
         return toSubmissionResponse(lid, findSubmission(aid));
     }
 
-    /** PUT /lectures/{Lid}/assignments/{aid} — 제출물 수정. 채점이 끝나면 수정할 수 없다. */
+    /** PUT /lectures/{Lid}/assignments/{aid} — 제출물 수정. */
     public AssignmentResponse.SubmissionResponse modify(int lid, int aid, CurrentUser currentUser,
                                                        AssignmentSubmitRequest request) {
         requireEnrolled(lid, currentUser);
         validate(request);
-
-        if (findSubmission(aid).getScore() != null) {
-            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED", "채점이 끝난 제출물은 수정할 수 없습니다.");
-        }
 
         storeLink(lid, request);
         classroomRepository.updateSubmission(aid, request.getWork(), request.getWorkFilename(), request.getNote());
         return toSubmissionResponse(lid, findSubmission(aid));
     }
 
-    /** DELETE /lectures/{Lid}/assignments/{aid} — 제출물 삭제. 채점이 끝나면 삭제할 수 없다. */
+    /** DELETE /lectures/{Lid}/assignments/{aid} — 제출물 삭제. */
     public void remove(int lid, int aid, CurrentUser currentUser) {
         requireEnrolled(lid, currentUser);
-
-        if (findSubmission(aid).getScore() != null) {
-            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED", "채점이 끝난 제출물은 삭제할 수 없습니다.");
-        }
 
         classroomRepository.deleteSubmission(aid);
     }
@@ -242,12 +229,6 @@ public class LectureClassroomService {
             request.setWork(null);
             request.setWorkFilename(null);
         }
-        if (length(request.getWork()) > 500 || length(request.getWorkFilename()) > 255) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "파일 정보가 너무 깁니다.");
-        }
-        if (length(request.getNote()) > 3000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "내용은 3000자까지 입력할 수 있습니다.");
-        }
     }
 
     private AssignmentResponse.SubmissionResponse toSubmissionResponse(int lid, SubmissionRow row) {
@@ -263,13 +244,8 @@ public class LectureClassroomService {
         return v == null || v.trim().isEmpty();
     }
 
-    private static int length(String v) {
-        return v == null ? 0 : v.length();
-    }
-
     /**
-     * 수강 화면 공통 확인. 로그인 → 강의 존재 → 수강 여부 순서다.
-     * 수강 여부는 enrollments(user_id, Lid) 행으로 본다.
+     * 수강 화면 공통 확인. 로그인 → 강의 존재 순서다.
      */
     private Enrolled requireEnrolled(int lid, CurrentUser currentUser) {
         if (currentUser == null) {
@@ -280,10 +256,10 @@ public class LectureClassroomService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "LECTURE_NOT_FOUND", "강의를 찾을 수 없습니다."));
 
+        // 수강 기록이 없으면 아직 한 번도 안 본 것으로 본다.
         EnrollmentProgress progress = lectureRepository
                 .findEnrollment(currentUser.getUserId(), lid)
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.FORBIDDEN, "NOT_ENROLLED", "수강 중인 강의가 아닙니다."));
+                .orElseGet(() -> new EnrollmentProgress(false, 0));
 
         return new Enrolled(lecture, progress);
     }
