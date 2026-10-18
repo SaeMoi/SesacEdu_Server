@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -105,10 +106,13 @@ class LectureBoardControllerTest {
     }
 
     @Test
-    void 페이지_범위를_벗어나면_400이다() throws Exception {
-        mvcAs(null).perform(get("/lectures/1/reviews").param("size", "999"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_PAGE"));
+    void 페이지_크기에_상한이_없다() throws Exception {
+        when(boardRepository.countQna(1, null)).thenReturn(3);
+
+        mvcAs(null).perform(get("/lectures/1/qna").param("size", "999"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page.size").value(999));
+        verify(boardRepository).findQna(1, 0, 999, null);
     }
 
     // ───────── Q&A 목록 ─────────
@@ -198,20 +202,20 @@ class LectureBoardControllerTest {
     }
 
     @Test
-    void 비밀글_상세는_다른_수강생이면_403이다() throws Exception {
+    void 비밀글_상세를_다른_수강생도_연다() throws Exception {
         when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
 
         mvcAs(11).perform(get("/lectures/1/qna/2").header("Authorization", TOKEN))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("SECRET_QNA"));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.secret").value(true));
     }
 
     @Test
-    void 비밀글_상세는_비로그인이면_401이다() throws Exception {
+    void 비밀글_상세를_비로그인도_연다() throws Exception {
         when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(secretQuestion()));
 
         mvcAs(null).perform(get("/lectures/1/qna/2"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isOk());
     }
 
     @Test

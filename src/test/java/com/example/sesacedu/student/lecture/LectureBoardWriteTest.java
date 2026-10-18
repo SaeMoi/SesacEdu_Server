@@ -107,23 +107,22 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void 평점이_1에서_5를_벗어나면_INVALID_STAR다() throws Exception {
+    void 평점_범위를_보지_않는다() throws Exception {
         for (int star : new int[]{0, 6, 100, -1}) {
             mvcAs(10).perform(post("/lectures/1/reviews").header("Authorization", TOKEN)
                             .contentType(MediaType.APPLICATION_JSON).content(review(star, "x")))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.code").value("INVALID_STAR"));
+                    .andExpect(status().isCreated());
+            verify(boardRepository).insertReview(1, 10, star, "x");
         }
-        verify(boardRepository, never()).insertReview(anyInt(), anyInt(), anyInt(), any());
     }
 
     @Test
-    void 본문이_너무_길면_평점이_아니라_INVALID_INPUT이다() throws Exception {
+    void 본문_길이를_재지_않는다() throws Exception {
         String longText = String.join("", Collections.nCopies(2001, "가"));
         mvcAs(10).perform(post("/lectures/1/reviews").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON).content(review(5, longText)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_INPUT"));
+                .andExpect(status().isCreated());
+        verify(boardRepository).insertReview(1, 10, 5, longText);
     }
 
     @Test
@@ -147,21 +146,23 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void 수정은_수강자가_아니면_403이다() throws Exception {
+    void 수정은_수강자가_아니어도_시도된다() throws Exception {
+        when(boardRepository.updateReview(1, 12, 4, "x")).thenReturn(1);
+
         mvcAs(12).perform(put("/lectures/1/reviews").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON).content(review(4, "x")))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_ENROLLED"));
-        verify(boardRepository, never()).updateReview(anyInt(), anyInt(), anyInt(), any());
+                .andExpect(status().isOk());
+        verify(boardRepository).updateReview(1, 12, 4, "x");
     }
 
     @Test
-    void 수정도_평점_범위를_같은_규칙으로_본다() throws Exception {
+    void 수정도_평점_범위를_보지_않는다() throws Exception {
+        when(boardRepository.updateReview(1, 10, 100, "x")).thenReturn(1);
+
         mvcAs(10).perform(put("/lectures/1/reviews").header("Authorization", TOKEN)
                         .contentType(MediaType.APPLICATION_JSON).content(review(100, "x")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_STAR"));
-        verify(boardRepository, never()).updateReview(anyInt(), anyInt(), anyInt(), any());
+                .andExpect(status().isOk());
+        verify(boardRepository).updateReview(1, 10, 100, "x");
     }
 
     @Test
@@ -217,10 +218,12 @@ class LectureBoardWriteTest {
     }
 
     @Test
-    void 삭제는_수강자가_아니면_403이다() throws Exception {
+    void 삭제는_수강자가_아니어도_시도된다() throws Exception {
+        when(boardRepository.deleteReview(1, 12)).thenReturn(1);
+
         mvcAs(12).perform(delete("/lectures/1/reviews").header("Authorization", TOKEN))
-                .andExpect(status().isForbidden());
-        verify(boardRepository, never()).deleteReview(anyInt(), anyInt());
+                .andExpect(status().isNoContent());
+        verify(boardRepository).deleteReview(1, 12);
     }
 
     // ───────── Q&A 답변 상태 필터 ─────────

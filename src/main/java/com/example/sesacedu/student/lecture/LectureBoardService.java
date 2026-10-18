@@ -24,7 +24,6 @@ public class LectureBoardService {
 
     static final int DEFAULT_PAGE = 1;
     static final int DEFAULT_SIZE = 10;
-    static final int MAX_SIZE = 50;
 
     /** 목록에서 비밀글 제목 대신 보여 주는 문구. */
     static final String SECRET_TITLE = "비밀글입니다.";
@@ -98,17 +97,6 @@ public class LectureBoardService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "QNA_NOT_FOUND", "질문을 찾을 수 없습니다."));
 
-        // 비밀글은 작성자와 담당 강사만 본다.
-        if (row.isSecret()) {
-            if (currentUser == null) {
-                throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다.");
-            }
-            int instructorUserId = boardRepository.findInstructorUserId(lid).orElse(-1);
-            if (currentUser.getUserId() != row.getUserId() && currentUser.getUserId() != instructorUserId) {
-                throw new ApiException(HttpStatus.FORBIDDEN, "SECRET_QNA", "비밀글은 작성자와 강사만 볼 수 있습니다.");
-            }
-        }
-
         return new QnaDetailResponse(
                 row.getQid(), lid, row.getUserId(), row.getNickname(),
                 row.getTitle(), row.getQuestion(), row.getAnswer(),
@@ -119,10 +107,6 @@ public class LectureBoardService {
     public void writeReview(int lid, CurrentUser currentUser, ReviewWriteRequest request) {
         requireEnrolledWriter(lid, currentUser);
         validateReview(request);
-
-        if (boardRepository.existsReview(lid, currentUser.getUserId())) {
-            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_REVIEWED", "이미 수강평을 작성했습니다.");
-        }
 
         boardRepository.insertReview(lid, currentUser.getUserId(), request.getStar(), request.getReview());
     }
@@ -153,12 +137,6 @@ public class LectureBoardService {
         if (request == null || request.getTitle() == null || request.getTitle().trim().isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제목을 입력해 주세요.");
         }
-        if (request.getTitle().length() > 200) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "제목은 200자까지 쓸 수 있습니다.");
-        }
-        if (request.getQuestion() != null && request.getQuestion().length() > 4000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "본문은 4000자까지 쓸 수 있습니다.");
-        }
 
         // secret 을 안 보내면 공개글이다.
         boolean secret = Boolean.TRUE.equals(request.getSecret());
@@ -168,16 +146,10 @@ public class LectureBoardService {
         return new CreatedResponse(qid);
     }
 
-    /** 평점은 1~5, 본문은 2000자까지. */
+    /** 평점은 보낸 값을 그대로 쓴다. */
     private void validateReview(ReviewWriteRequest request) {
         if (request == null || request.getStar() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_STAR", "평점을 입력해 주세요.");
-        }
-        if (request.getStar() < 1 || request.getStar() > 5) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_STAR", "평점은 1에서 5 사이여야 합니다.");
-        }
-        if (request.getReview() != null && request.getReview().length() > 2000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "수강평은 2000자까지 쓸 수 있습니다.");
         }
     }
 
@@ -196,14 +168,11 @@ public class LectureBoardService {
         return null;
     }
 
-    /** 글쓰기 공통 확인. 공개 강의 → 로그인 → 수강 여부. */
+    /** 글쓰기 공통 확인. 공개 강의 → 로그인. */
     private void requireEnrolledWriter(int lid, CurrentUser currentUser) {
         requireOpenLecture(lid);
         if (currentUser == null) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "로그인이 필요합니다.");
-        }
-        if (!lectureRepository.findEnrollment(currentUser.getUserId(), lid).isPresent()) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "NOT_ENROLLED", "수강 중인 강의가 아닙니다.");
         }
     }
 
@@ -218,7 +187,7 @@ public class LectureBoardService {
 
         int resolvedPage = page == null ? DEFAULT_PAGE : page;
         int resolvedSize = size == null ? DEFAULT_SIZE : size;
-        if (resolvedPage < 1 || resolvedSize < 1 || resolvedSize > MAX_SIZE) {
+        if (resolvedPage < 1 || resolvedSize < 1) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAGE", "페이지 조건이 올바르지 않습니다.");
         }
         return new Paging(resolvedPage, resolvedSize, (resolvedPage - 1) * resolvedSize);
