@@ -184,6 +184,7 @@ class PaymentApiTest {
 
     @Test @DisplayName("가상 PG 401: 시크릿 없음·불일치, 시크릿이 맞아도 브라우저 Origin이 있으면 거부. CSV 기록 없음")
     void vpgUnauthorized() throws Exception {
+        // Origin은 CORS 허용 목록(.env CORS_ALLOWED_ORIGINS)에 있는 값을 쓴다. 목록 밖이면 CORS가 403으로 먼저 막아 가상 PG의 Origin 거부(401)까지 오지 않는다.
         String json = vpgCard("700001", 1000, GOOD_CARD, NEXT_YEAR);
         mvc.perform(post("/virtualPG/buy/confirm").contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isUnauthorized())
@@ -191,7 +192,7 @@ class PaymentApiTest {
                 .andExpect(jsonPath("$.result").value(nullValue()));
         mvc.perform(post("/virtualPG/buy/confirm").header("X-VPG-Secret", "guess").contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isUnauthorized());
-        mvc.perform(post("/virtualPG/buy/confirm").header("X-VPG-Secret", VPG_SECRET).header("Origin", "http://localhost:3000")
+        mvc.perform(post("/virtualPG/buy/confirm").header("X-VPG-Secret", VPG_SECRET).header("Origin", "http://localhost:5173")
                         .contentType(MediaType.APPLICATION_JSON).content(json))
                 .andExpect(status().isUnauthorized());
         assertEquals(0, ledgerRows("700001"));

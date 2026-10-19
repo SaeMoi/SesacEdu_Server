@@ -5,6 +5,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.servlet.http.HttpServletRequest;
@@ -29,6 +30,10 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * → 4. users.point 잔액, maxUsable = LEAST(잔액, productAmount). 지금은 POINTS_ENABLED = false라 둘 다 0
  * → 5. 200 CHECKOUT_ITEMS_FOUND { items, itemCount, coupons, point, orderName, payMethods, summary }.
  * 조회 전용 (주문·차감 없음). 대상은 토큰 sub로만 정한다 (IDOR 없음). 개인정보라 Cache-Control: no-store.
+ *
+ * 바로 구매 (Kim 2026-10-18): ?courseIds=12&direct=true 이면 장바구니 대신 그 강좌를 대상으로 한다
+ * (장바구니에 없어도 됨, 장바구니는 바꾸지 않음). open이고 아직 수강하지 않은 강좌만 purchasable true.
+ * cpn·pnt·POST /mypage/buy도 같은 direct 값을 받아 장바구니 없이 계산한다.
  *
  * itemCount·productAmount·orderName은 구매 가능(open) 항목만 센다. 쿠폰 모양은 GET /mypage/bnf의 coupons[]와 같고
  * applicable·expectedDiscount만 더한다. summary의 couponDiscountAmount·usePoint는 여기서 항상 0
@@ -62,17 +67,40 @@ public class buy {
     }
 
     @GetMapping("/mypage/buy")
-    public ResponseEntity<Map<String, Object>> checkout(HttpServletRequest request) {
+    public ResponseEntity<Map<String, Object>> checkout(@RequestParam(required = false) String courseIds,
+                                                        @RequestParam(required = false) String direct,
+                                                        HttpServletRequest request) {
         // 1. JWT 검증
         long userId = jwtUtil.getUid(request);
 
-        // 2. 내 장바구니 전체. 바인드 변수만 사용
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT c.Lid AS course_id, l.name AS title, l.Lprice AS price,"
-                        + "       CASE WHEN l.status = 'open' THEN 1 ELSE 0 END AS purchasable"
-                        + "  FROM cart c JOIN lectures l ON l.Lid = c.Lid"
-                        + " WHERE c.user_id = ?"
-                        + " ORDER BY c.Lid DESC", userId);
+        // 2. 결제 대상. 기본은 내 장바구니 전체, 바로 구매(direct=true)면 courseIds의 강좌. 바인드 변수만 사용
+        List<Map<String, Object>> rows;
+        if (isDirect(direct)) {
+            List<Long> ids = parseCourseIds(courseIds);
+            if (ids == null) {
+                List<Map<String, String>> errors = new ArrayList<>();
+                errors.add(error("courseIds", "쉼표로 구분한 양의 정수 1~50개여야 합니다."));
+                return invalidInput(errors);
+            }
+            List<Object> args = new ArrayList<>();
+            args.add(userId);
+            args.addAll(ids);
+            rows = jdbc.queryForList(
+                    "SELECT l.Lid AS course_id, l.name AS title, l.Lprice AS price,"
+                            + "       CASE WHEN l.status = 'open' AND NOT EXISTS"
+                            + "            (SELECT 1 FROM enrollments e WHERE e.user_id = ? AND e.Lid = l.Lid)"
+                            + "            THEN 1 ELSE 0 END AS purchasable"
+                            + "  FROM lectures l"
+                            + " WHERE l.Lid IN (" + String.join(", ", Collections.nCopies(ids.size(), "?")) + ")"
+                            + " ORDER BY l.Lid DESC", args.toArray());
+        } else {
+            rows = jdbc.queryForList(
+                    "SELECT c.Lid AS course_id, l.name AS title, l.Lprice AS price,"
+                            + "       CASE WHEN l.status = 'open' THEN 1 ELSE 0 END AS purchasable"
+                            + "  FROM cart c JOIN lectures l ON l.Lid = c.Lid"
+                            + " WHERE c.user_id = ?"
+                            + " ORDER BY c.Lid DESC", userId);
+        }
 
         List<Map<String, Object>> items = new ArrayList<>();
         Map<Long, Long> open = new LinkedHashMap<>();      // 구매 가능 항목 Lid → 가격 (쿠폰 대조용)
@@ -146,6 +174,11 @@ public class buy {
                 .body(body("CHECKOUT_ITEMS_FOUND", "결제할 강의를 조회했습니다.", result));
     }
 
+    /** 바로 구매 여부. "true"(대소문자 무시)만 바로 구매, 그 밖의 값·생략은 장바구니 기준 */
+    static boolean isDirect(String v) {
+        return v != null && "true".equalsIgnoreCase(v.trim());
+    }
+
     /**
      * 쿼리 courseIds "12,7" → 중복 제거한 Lid 목록 (입력 순서 유지). 비었거나, 50개 초과,
      * 양의 정수가 아닌 값이 있으면 null.
@@ -180,18 +213,27 @@ public class buy {
      * 요청한 courseIds 중 여기서 빠진 것이 있으면 409 CART_CHANGED. IN 목록은 자리표시자로 바인드한다.
      */
     static Map<Long, Long> orderPrices(JdbcTemplate jdbc, long userId, List<Long> courseIds) {
+        return orderPrices(jdbc, userId, courseIds, false);
+    }
+
+    /** direct = true(바로 구매)면 장바구니 조건 없이 open + 미수강 강좌만 */
+    static Map<Long, Long> orderPrices(JdbcTemplate jdbc, long userId, List<Long> courseIds, boolean direct) {
         String placeholders = String.join(", ", Collections.nCopies(courseIds.size(), "?"));
         List<Object> args = new ArrayList<>();
-        args.add(userId);
+        if (!direct) args.add(userId);
         args.addAll(courseIds);
         args.add(userId);
-        Map<Long, Long> found = new HashMap<>();
-        for (Map<String, Object> r : jdbc.queryForList(
-                "SELECT l.Lid AS course_id, l.Lprice AS price"
+        String sql = direct
+                ? "SELECT l.Lid AS course_id, l.Lprice AS price"
+                        + "  FROM lectures l"
+                        + " WHERE l.Lid IN (" + placeholders + ") AND l.status = 'open'"
+                        + "   AND NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id = ? AND e.Lid = l.Lid)"
+                : "SELECT l.Lid AS course_id, l.Lprice AS price"
                         + "  FROM cart c JOIN lectures l ON l.Lid = c.Lid"
                         + " WHERE c.user_id = ? AND c.Lid IN (" + placeholders + ") AND l.status = 'open'"
-                        + "   AND NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id = ? AND e.Lid = c.Lid)",
-                args.toArray())) {
+                        + "   AND NOT EXISTS (SELECT 1 FROM enrollments e WHERE e.user_id = ? AND e.Lid = c.Lid)";
+        Map<Long, Long> found = new HashMap<>();
+        for (Map<String, Object> r : jdbc.queryForList(sql, args.toArray())) {
             found.put(num(r.get("COURSE_ID")), num(r.get("PRICE")));
         }
         Map<Long, Long> prices = new LinkedHashMap<>();
@@ -225,8 +267,13 @@ public class buy {
      * 값은 모두 DB에서 읽는다 (요청의 금액은 받지 않는다). 어떤 테이블도 바꾸지 않는다.
      */
     static Quote quote(JdbcTemplate jdbc, long userId, List<Long> courseIds, Long couponId) {
+        return quote(jdbc, userId, courseIds, couponId, false);
+    }
+
+    /** direct = true(바로 구매)면 주문 대상에 장바구니 조건을 두지 않는다 */
+    static Quote quote(JdbcTemplate jdbc, long userId, List<Long> courseIds, Long couponId, boolean direct) {
         Quote q = new Quote();
-        q.prices = orderPrices(jdbc, userId, courseIds);
+        q.prices = orderPrices(jdbc, userId, courseIds, direct);
         if (q.prices.size() < courseIds.size()) {
             q.error = cartChanged(courseIds, q.prices);
             return q;

@@ -4,6 +4,8 @@ import com.example.sesacedu.forum.ForumSupport.ForumException;
 import com.example.sesacedu.global.JwtUtil.JwtAuthException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -25,6 +27,8 @@ import static com.example.sesacedu.forum.ForumSupport.invalidInput;
  * - JSON 깨짐         : 400 INVALID_INPUT (field "body")
  * - 그 외             : 500 INTERNAL_ERROR. 내부 원인은 응답에 넣지 않고 로그로만 남긴다.
  */
+// 강의 쪽 GlobalExceptionHandler(범위 없음)보다 먼저 적용되도록 우선순위를 가장 높게 둔다.
+@Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(basePackageClasses = ForumExceptionHandler.class)
 public class ForumExceptionHandler {
 

@@ -44,9 +44,14 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
-// 빌드 결과물은 OneDrive 밖에 둔다 (동기화 중 파일 잠금 방지)
+// 빌드 결과물을 별도 폴더에 저장합니다.
 if (System.getProperty('os.name').toLowerCase().contains('windows')) {
     buildDir = file("C:/gradle-build/sesacedu")
 } else {
     buildDir = file("${System.getProperty('user.home')}/gradle-build/sesacedu")
+}
+
+// Java 소스를 UTF-8로 컴파일합니다.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }

@@ -47,6 +47,7 @@ public class buy_cpn {
     @GetMapping("/mypage/buy/cpn")
     public ResponseEntity<Map<String, Object>> apply(@RequestParam(required = false) String courseIds,
                                                      @RequestParam(required = false) String couponId,
+                                                     @RequestParam(required = false) String direct,
                                                      HttpServletRequest request) {
         // 1. JWT 검증 (쿼리 검증보다 먼저)
         long userId = jwtUtil.getUid(request);
@@ -60,7 +61,7 @@ public class buy_cpn {
         if (!errors.isEmpty()) return invalidInput(errors);
 
         // 3~4. 주문 대상 + 쿠폰 검증·할인 (pnt·POST와 같은 계산)
-        buy.Quote q = buy.quote(jdbc, userId, ids, cid);
+        buy.Quote q = buy.quote(jdbc, userId, ids, cid, buy.isDirect(direct));
         if (q.error != null) return q.error;
 
         // 5. 금액 계산만 (DB 변경 없음)
