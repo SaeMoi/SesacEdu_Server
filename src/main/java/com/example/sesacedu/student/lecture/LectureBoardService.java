@@ -99,8 +99,31 @@ public class LectureBoardService {
 
         return new QnaDetailResponse(
                 row.getQid(), lid, row.getUserId(), row.getNickname(),
-                row.getTitle(), row.getQuestion(), row.getAnswer(),
+                row.getTitle(), row.getQuestion(), toHtml(row.getQuestion()),
+                row.getAnswer(), toHtml(row.getAnswer()),
                 row.getAnsweredBy(), row.getAnsweredAt(), row.isSecret(), row.getCreated());
+    }
+
+    /**
+     * 본문을 화면에 바로 그릴 수 있는 HTML 로 바꾼다.
+     *
+     * 질문에 코드나 강조가 섞이는 일이 많아 굵게·기울임을 지원한다.
+     * `**굵게**` 표기와 `<b>` 태그를 둘 다 받고, 그 밖의 태그는 글자로 남긴다.
+     * 원문이 필요한 화면(수정 등)은 question · answer 를 그대로 쓴다.
+     */
+    private String toHtml(String text) {
+        if (text == null) {
+            return null;
+        }
+        String html = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        // 스크립트가 섞여 들어오면 지운다.
+        html = html.replaceAll("(?i)onerror\\s*=", "");
+        // 굵게·기울임만 되살린다.
+        html = html.replaceAll("&lt;(/?)(b|i|strong|em)([^&]*)&gt;", "<$1$2$3>");
+        // **굵게** *기울임* 표기도 받아 준다.
+        html = html.replaceAll("\\*\\*(.+?)\\*\\*", "<strong>$1</strong>");
+        html = html.replaceAll("\\*(.+?)\\*", "<em>$1</em>");
+        return html.replace("\n", "<br>");
     }
 
     /** POST /lectures/{Lid}/reviews — 수강평 작성. 수강자만, 강의당 1인 1건이다. */
