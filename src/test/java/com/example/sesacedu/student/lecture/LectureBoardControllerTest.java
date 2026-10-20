@@ -181,6 +181,33 @@ class LectureBoardControllerTest {
     // ───────── Q&A 상세 ─────────
 
     @Test
+    void 상세는_굵게_기울임을_표시용_HTML_로_준다() throws Exception {
+        QnaRow row = new QnaRow(2, 10, "수강생A", "제목",
+                "**중요** 한 부분과 <b>태그</b> 표기", "*답변* 입니다", null, null, false, WRITTEN);
+        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(row));
+
+        mvcAs(null).perform(get("/lectures/1/qna/2"))
+                .andExpect(status().isOk())
+                // 원문은 그대로 둔다. 수정 화면이 이 값을 쓴다.
+                .andExpect(jsonPath("$.question").value("**중요** 한 부분과 <b>태그</b> 표기"))
+                .andExpect(jsonPath("$.questionHtml")
+                        .value("<strong>중요</strong> 한 부분과 <b>태그</b> 표기"))
+                .andExpect(jsonPath("$.answerHtml").value("<em>답변</em> 입니다"));
+    }
+
+    @Test
+    void 허용하지_않은_태그는_글자로_남는다() throws Exception {
+        QnaRow row = new QnaRow(2, 10, "수강생A", "제목",
+                "a < b 이고 <script>x</script> 는 글자", null, null, null, false, WRITTEN);
+        when(boardRepository.findQnaDetail(1, 2)).thenReturn(Optional.of(row));
+
+        mvcAs(null).perform(get("/lectures/1/qna/2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.questionHtml")
+                        .value("a &lt; b 이고 &lt;script&gt;x&lt;/script&gt; 는 글자"));
+    }
+
+    @Test
     void 비밀글_상세는_작성자가_열면_본문까지_나온다() throws Exception {
         QnaRow full = new QnaRow(2, 10, "수강생A", "결제 관련 비밀 질문",
                 "비밀 본문입니다.", null, null, null, true, WRITTEN);
