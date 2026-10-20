@@ -31,8 +31,7 @@ import static com.example.sesacedu.global.ApiResponse.*;
  *
  * 명세와 다르게 정한 것 (db/schema.sql 기준):
  * - 회원 컬럼은 uid가 아니라 user_id.
- * - usePoint: orders.use_point가 없어 SUM(order_items.price) − discount − Aprice로 되찾는다 (음수면 0, payment와 같은 식).
- *   지금은 buy.POINTS_ENABLED = false라 정상 주문은 항상 0.
+ * - usePoint: orders.use_point (Kim 2026-10-19).
  * - items[].title은 lectures.name 조인이 아니라 order_items.Lname(구매 시점 스냅샷). 강의가 강제 삭제된 항목은
  *   courseId null로 남는다 (명세 쿼리의 JOIN은 그 항목을 빠뜨려 productAmount가 어긋난다). 순서는 oiid(주문에 넣은 순서).
  * - 명세의 status는 PAID | REFUNDED뿐이지만 pending(PG 시간 초과 뒤 확인 등)·cancelled 주문도 내 주문이면 보여 준다
@@ -48,7 +47,7 @@ public class buy_receipt {
 
     /** 내 주문 한 건. IDOR을 켤 때는 여기의 user_id 조건을 뺀다 */
     static final String ORDER_SQL =
-            "SELECT oid AS order_id, discount AS discount, Aprice AS final_amount, pay AS pay, status AS status,"
+            "SELECT oid AS order_id, discount AS discount, use_point AS use_point, Aprice AS final_amount, pay AS pay, status AS status,"
                     + "       created AS ordered_at"
                     + "  FROM orders"
                     + " WHERE oid = ? AND user_id = ?";
@@ -103,7 +102,7 @@ public class buy_receipt {
         order.put("items", items);
         order.put("productAmount", productAmount);
         order.put("couponDiscountAmount", discount);
-        order.put("usePoint", Math.max(0, productAmount - discount - finalAmount));
+        order.put("usePoint", num(o.get("USE_POINT")));
         order.put("finalAmount", finalAmount);
         order.put("pay", o.get("PAY"));
         order.put("orderedAt", iso(o.get("ORDERED_AT")));

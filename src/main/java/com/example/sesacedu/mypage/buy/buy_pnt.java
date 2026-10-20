@@ -25,7 +25,6 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * → 3. 주문 대상 = 내 장바구니 + open + 미수강, 빠지면 409 CART_CHANGED
  * → 4. couponId가 있으면 GET /mypage/buy/cpn과 같은 검증 (400 COUPON_NOT_APPLICABLE)
  * → 5. maxUsable = LEAST(users.point, 쿠폰 적용 후 금액). 넘으면 400 INVALID_POINT
- *      (ERD 2026-10-13에 users.point가 없어 buy.POINTS_ENABLED = false: 잔액 0이라 usePoint 0만 200)
  *      { maxUsablePoint, balance, reason: EXCEEDS_BALANCE | EXCEEDS_ORDER_AMOUNT }
  * → 6. 200 POINT_APPLIED { summary, point }.
  * 조회 전용 미리보기: users.point·user_coupons를 바꾸지 않는다. 개인정보라 Cache-Control: no-store.

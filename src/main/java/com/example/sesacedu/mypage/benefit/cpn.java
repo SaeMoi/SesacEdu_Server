@@ -64,12 +64,16 @@ public class cpn {
         }
 
         // 3. 코드 조회 + 만료 확인 (없음·만료 구분 없음 = 코드 추측 방지)
-        List<Long> cids = jdbc.queryForList(
-                "SELECT cid FROM coupons WHERE code = ? AND due >= SYSTIMESTAMP", Long.class, code);
-        if (cids.isEmpty()) {
+        List<Map<String, Object>> found = jdbc.queryForList(
+                "SELECT cid, user_id FROM coupons WHERE code = ? AND due >= SYSTIMESTAMP", code);
+        if (found.isEmpty()) {
             return ResponseEntity.badRequest().body(body("INVALID_COUPON_CODE", "유효하지 않은 쿠폰 코드입니다.", null));
         }
-        long cid = cids.get(0);
+        long cid = ((Number) found.get(0).get("CID")).longValue();
+        // 강사는 본인이 발행한 쿠폰을 등록할 수 없다 (Kim 2026-10-19)
+        if (((Number) found.get(0).get("USER_ID")).longValue() == userId) {
+            return ResponseEntity.badRequest().body(body("OWN_COUPON", "본인이 발행한 쿠폰은 등록할 수 없습니다.", null));
+        }
 
         // 4. 등록 + 수량 차감을 한 트랜잭션으로. 둘 다 성공해야 커밋
         String failure = tx.execute(status -> {

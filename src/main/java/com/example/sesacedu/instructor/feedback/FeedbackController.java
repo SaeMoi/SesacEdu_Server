@@ -26,10 +26,27 @@ public class FeedbackController {
 
     private final FeedbackService feedbackService;
     private final JwtUtil jwtUtil;
+    private final com.example.sesacedu.student.lecture.FileResponses fileResponses;
 
-    public FeedbackController(FeedbackService feedbackService, JwtUtil jwtUtil) {
+    public FeedbackController(FeedbackService feedbackService, JwtUtil jwtUtil,
+                              com.example.sesacedu.student.lecture.FileResponses fileResponses) {
         this.feedbackService = feedbackService;
         this.jwtUtil = jwtUtil;
+        this.fileResponses = fileResponses;
+    }
+
+    // ---------------- 제출 파일 받기 ----------------
+    @Operation(summary = "과제 제출 파일 받기", description = "담당 강의의 제출 파일을 첨부파일로 내려준다.")
+    @GetMapping("/assignments/{assid}/file")
+    public ResponseEntity<org.springframework.core.io.Resource> file(
+            @PathVariable("assid") int aid, HttpServletRequest request) {
+        try {
+            return fileResponses.send(feedbackService.getFile(aid, instructorId(request)), true);
+        } catch (FeedbackService.NotFoundOrForbidden e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "과제 정보 없음");
+        } catch (FeedbackService.FileNotFound e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "제출 파일이 없습니다.");
+        }
     }
 
     /** Authorization 헤더의 JWT 에서 강사 user_id 를 꺼낸다 (강사 권한 확인 포함). */

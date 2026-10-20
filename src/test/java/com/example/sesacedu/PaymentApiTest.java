@@ -70,7 +70,7 @@ class PaymentApiTest {
         for (String t : new String[]{"order_items", "orders", "user_coupons", "coupons", "cart", "enrollments", "lectures", "users"}) {
             jdbc.update("DELETE FROM " + t);
         }
-        // ERD 2026-10-13: users.point 없음 (buy.POINTS_ENABLED = false) → 주문은 모두 usePoint 0
+        // users.point 기본값 0. 포인트 결제는 payWithPoints 에서 잔액을 준다
         jdbc.update("INSERT INTO users (mail, pw, uname, nickname, auth) VALUES ('pay-me@example.test', 'x', '김결제', '결제', 1)");
         jdbc.update("INSERT INTO users (mail, pw, uname, nickname, auth) VALUES ('pay-other@example.test', 'x', '이타인', '타인', 1)");
         me = id("pay-me@example.test");
@@ -172,9 +172,10 @@ class PaymentApiTest {
         return Objects.requireNonNull(jdbc.queryForObject(sql, Long.class, args));
     }
 
-    /** POST /mypage/buy로는 만들 수 없는 주문 (포인트 사용액이 남은 옛 주문 등)을 직접 넣는다 */
-    long rawOrder(long discount, long aprice, long lid, String lname, long price) {
-        jdbc.update("INSERT INTO orders (user_id, discount, Aprice, pay, status) VALUES (?, ?, ?, 'CARD', 'pending')", me, discount, aprice);
+    /** POST /mypage/buy로는 만들 수 없는 주문 (잔액보다 큰 포인트 사용액이 남은 주문 등)을 직접 넣는다 */
+    long rawOrder(long discount, long usePoint, long aprice, long lid, String lname, long price) {
+        jdbc.update("INSERT INTO orders (user_id, discount, use_point, Aprice, pay, status) VALUES (?, ?, ?, ?, 'CARD', 'pending')",
+                me, discount, usePoint, aprice);
         long oid = count("SELECT MAX(oid) FROM orders WHERE user_id = ?", me);
         jdbc.update("INSERT INTO order_items (oid, Lid, Lname, price) VALUES (?, ?, ?, ?)", oid, lid, lname, price);
         return oid;
@@ -380,10 +381,10 @@ class PaymentApiTest {
         assertEquals(1, count("SELECT used FROM user_coupons WHERE user_id = ? AND cid = 9101", me));
     }
 
-    @Test @DisplayName("결제 409: 주문 뒤 강의가 내려가면 CART_CHANGED, 포인트 사용액이 남은 주문은 INSUFFICIENT_POINT(포인트 보류라 잔액 0), 쿠폰을 써 버리면 COUPON_NOT_APPLICABLE")
+    @Test @DisplayName("결제 409: 주문 뒤 강의가 내려가면 CART_CHANGED, 잔액보다 큰 포인트 사용액이 남은 주문은 INSUFFICIENT_POINT, 쿠폰을 써 버리면 COUPON_NOT_APPLICABLE")
     void payConflicts() throws Exception {
         long closed = order("7", null, 0, "CARD");
-        long points = rawOrder(0, 45000, 12, "웹 보안 기초", 49000);   // 49000 - 0 - 45000 = 포인트 4000
+        long points = rawOrder(0, 4000, 45000, 12, "웹 보안 기초", 49000);   // 잔액 0인데 use_point 4000
         long coupon = order("16", 9101L, 0, "CARD");
 
         jdbc.update("UPDATE lectures SET status = 'closed' WHERE Lid = 7");
@@ -405,6 +406,29 @@ class PaymentApiTest {
             assertEquals("pending", orderStatus(oid));
             assertEquals(0, ledgerRows(String.valueOf(oid)));
         }
+    }
+
+    @Test @DisplayName("결제 200 포인트: 가상 PG에는 Aprice만, 승인 뒤 users.point에서 orders.use_point만큼 차감. 주문 뒤 잔액이 줄면 409 INSUFFICIENT_POINT")
+    void payWithPoints() throws Exception {
+        jdbc.update("UPDATE users SET point = 10000 WHERE user_id = ?", me);
+        long oid = order("12", null, 3000, "CARD");
+        assertEquals(3000, count("SELECT use_point FROM orders WHERE oid = ?", oid));
+
+        jdbc.update("UPDATE users SET point = 2000 WHERE user_id = ?", me);   // 주문 뒤 다른 곳에서 써 버림
+        pay(me, cardBody(oid, GOOD_CARD)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSUFFICIENT_POINT"))
+                .andExpect(jsonPath("$.result.balance").value(2000))
+                .andExpect(jsonPath("$.result.usePoint").value(3000));
+        assertEquals("pending", orderStatus(oid));
+        assertEquals(0, ledgerRows(String.valueOf(oid)));
+
+        jdbc.update("UPDATE users SET point = 10000 WHERE user_id = ?", me);
+        pay(me, cardBody(oid, GOOD_CARD)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("PAYMENT_COMPLETED"))
+                .andExpect(jsonPath("$.result.amount").value(46000));
+        assertEquals("paid", orderStatus(oid));
+        assertEquals(7000, count("SELECT point FROM users WHERE user_id = ?", me));
+        assertEquals(1, count("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND Lid = 12", me));
     }
 
     @Test @DisplayName("결제 502: 가상 PG 시간 초과면 pending 유지 → 재요청은 가상 PG 멱등 결과로 200 (이중 승인 없음)")

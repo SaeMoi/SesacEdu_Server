@@ -274,6 +274,16 @@ class MypageBuyHistoryApiTest {
     }
 
     @Test
+    @DisplayName("상세: usePoint는 orders.use_point 값 그대로")
+    void detailUsePoint() throws Exception {
+        jdbc.update("UPDATE orders SET use_point = 2000 WHERE oid = 10231");
+        detail("10231")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.order.usePoint").value(2000))
+                .andExpect(jsonPath("$.result.order.couponDiscountAmount").value(5000));
+    }
+
+    @Test
     @DisplayName("상세: 계좌이체 영수증은 은행 코드·계좌 뒤 4자리, 카드 칸은 null")
     void detailTransfer() throws Exception {
         detail("10250")

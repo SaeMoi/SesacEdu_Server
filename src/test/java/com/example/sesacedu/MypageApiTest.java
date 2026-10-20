@@ -149,6 +149,58 @@ class MypageApiTest {
                 .andExpect(jsonPath("$.result.memberId").value(bareId));
     }
 
+    // ------------------------------------------------------------ GET /mypage/basic_profile
+
+    @Test @DisplayName("기본 프로필 200: 이름·닉네임·사진·role·point만, 개인정보 없음, no-store")
+    void basicProfileSuccess() throws Exception {
+        jdbc.update("UPDATE users SET point = 3000 WHERE user_id = ?", studentId);
+        mvc.perform(get("/mypage/basic_profile").header("Authorization", bearer(studentId)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.code").value("BASIC_PROFILE_FOUND"))
+                .andExpect(jsonPath("$.message").value("기본 프로필을 조회했습니다."))
+                .andExpect(jsonPath("$.result.memberId").value(studentId))
+                .andExpect(jsonPath("$.result.name").value("김새싹"))
+                .andExpect(jsonPath("$.result.nickname").value("새싹보안"))
+                .andExpect(jsonPath("$.result.profileImageUrl").value("/images/profile/15_profile.png"))
+                .andExpect(jsonPath("$.result.role").value("STUDENT"))
+                .andExpect(jsonPath("$.result.point").value(3000))
+                .andExpect(jsonPath("$.result.email").doesNotExist())
+                .andExpect(jsonPath("$.result.phone").doesNotExist())
+                .andExpect(jsonPath("$.result.birthDate").doesNotExist())
+                .andExpect(jsonPath("$.result.length()").value(6));
+    }
+
+    @Test @DisplayName("기본 프로필 200: 사진 없으면 null, auth 0 → GENERAL, point 기본 0")
+    void basicProfileDefaults() throws Exception {
+        mvc.perform(get("/mypage/basic_profile").header("Authorization", bearer(bareId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.profileImageUrl").value(nullValue()))
+                .andExpect(jsonPath("$.result.role").value("GENERAL"))
+                .andExpect(jsonPath("$.result.point").value(0));
+    }
+
+    @Test @DisplayName("기본 프로필 401·404: 토큰 없음 UNAUTHORIZED, 만료 TOKEN_EXPIRED, 없는 회원 MEMBER_NOT_FOUND")
+    void basicProfileErrors() throws Exception {
+        mvc.perform(get("/mypage/basic_profile"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        mvc.perform(get("/mypage/basic_profile").header("Authorization", "Bearer " + token(studentId, 60, SECRET)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("TOKEN_EXPIRED"));
+        mvc.perform(get("/mypage/basic_profile").header("Authorization", bearer(999999)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("MEMBER_NOT_FOUND"))
+                .andExpect(jsonPath("$.result").value(nullValue()));
+    }
+
+    @Test @DisplayName("기본 프로필: 조회 대상은 토큰 sub로만 (쿼리로 다른 ID를 보내도 무시)")
+    void basicProfileIgnoresIdParam() throws Exception {
+        mvc.perform(get("/mypage/basic_profile").param("memberId", String.valueOf(studentId)).header("Authorization", bearer(bareId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.memberId").value(bareId));
+    }
+
     // ------------------------------------------------------------ POST /mypage/verify-password
 
     String reauthToken(long sub, String purpose) throws Exception {

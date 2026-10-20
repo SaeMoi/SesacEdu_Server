@@ -79,13 +79,15 @@ public class LectureController {
     @Operation(summary = "강의 등록",
             description = "기본 정보와 썸네일을 저장한다(25번 기본정보 화면). "
                     + "multipart/form-data. user_id 는 JWT 에서 추출한다. "
-                    + "name·category·level·headline·price·status·thumbnail 은 필수, summary 만 선택. "
+                    + "name·category·level·headline·price·status 는 필수, summary·thumbnail 은 선택(썸네일이 없으면 기본 썸네일). "
+                    + "category 는 웹 보안/네트워크/개발 기초/로그 분석/클라우드, level 은 입문/초급/중급/고급 중 하나. "
                     + "status 는 open/closed/draft 중 하나(필수)이며 요청 값 그대로 저장된다. "
                     + "영상·자료는 다음 화면의 파일 업로드 API 로 올린다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "등록 성공"),
             @ApiResponse(responseCode = "400", description = "필수 정보 누락 / 썸네일 형식 오류 / 공개 조건 미충족"),
             @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(responseCode = "403", description = "강사 정보(instructors) 없는 계정"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
@@ -93,9 +95,9 @@ public class LectureController {
             HttpServletRequest request,
             @Parameter(description = "강의 제목. 필수")
             @RequestParam(value = "name", required = false) String name,
-            @Parameter(description = "카테고리. 필수")
+            @Parameter(description = "카테고리. 필수 (웹 보안/네트워크/개발 기초/로그 분석/클라우드)")
             @RequestParam(value = "category", required = false) String category,
-            @Parameter(description = "난이도. 필수")
+            @Parameter(description = "난이도. 필수 (입문/초급/중급/고급)")
             @RequestParam(value = "level", required = false) String level,
             @Parameter(description = "강의 한 줄 소개. 필수")
             @RequestParam(value = "headline", required = false) String headline,
@@ -105,11 +107,11 @@ public class LectureController {
             @RequestParam(value = "price", required = false) Integer price,
             @Parameter(description = "상태 open/closed/draft. 필수")
             @RequestParam(value = "status", required = false) String status,
-            @Parameter(description = "썸네일 이미지 (png/jpg/jpeg/svg/gif/webp). 필수")
+            @Parameter(description = "썸네일 이미지 (png/jpg/jpeg/svg/gif/webp). 선택, 없으면 기본 썸네일")
             @RequestParam(value = "thumbnail", required = false) MultipartFile thumbnail) {
 
         long instructorUserId = jwtUtil.getUid(request);
-        // 필수값: 제목·카테고리·난이도·한 줄 소개·가격·상태·썸네일 (summary 만 선택)
+        // 필수값: 제목·카테고리·난이도·한 줄 소개·가격·상태 (summary·thumbnail 은 선택)
         if (isBlank(name) || isBlank(category) || isBlank(level)
                 || isBlank(headline) || price == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -119,8 +121,12 @@ public class LectureController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "상태(status)는 open, closed, draft 중 하나여야 합니다.");
         }
-        if (thumbnail == null || thumbnail.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "썸네일 이미지는 필수입니다.");
+        checkOptions(category, level);
+        // users.auth 만 강사이고 instructors 행이 없으면 INSERT 가 FK 오류(500)로 끝나므로 먼저 막는다.
+        if (!lectureService.isInstructor(instructorUserId)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "code", "INSTRUCTOR_PROFILE_REQUIRED",
+                    "message", "강사 정보가 등록되지 않은 계정입니다. 강사 신청 승인 후 강의를 등록할 수 있습니다."));
         }
         LectureSaveRequest req = toRequest(name, category, level, headline, summary, price, status);
         try {
@@ -151,9 +157,9 @@ public class LectureController {
             HttpServletRequest request,
             @Parameter(description = "강의 제목. 필수")
             @RequestParam(value = "name", required = false) String name,
-            @Parameter(description = "카테고리. 필수")
+            @Parameter(description = "카테고리. 필수 (웹 보안/네트워크/개발 기초/로그 분석/클라우드)")
             @RequestParam(value = "category", required = false) String category,
-            @Parameter(description = "난이도. 필수")
+            @Parameter(description = "난이도. 필수 (입문/초급/중급/고급)")
             @RequestParam(value = "level", required = false) String level,
             @Parameter(description = "강의 한 줄 소개. 필수")
             @RequestParam(value = "headline", required = false) String headline,
@@ -177,6 +183,7 @@ public class LectureController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "상태(status)는 open, closed, draft 중 하나여야 합니다.");
         }
+        checkOptions(category, level);
         LectureSaveRequest req = toRequest(name, category, level, headline, summary, price, status);
         try {
             lectureService.update(lid, instructorUserId, req, thumbnail);
@@ -220,18 +227,79 @@ public class LectureController {
         return ResponseEntity.ok(Map.of("message", "파일이 업로드되었습니다."));
     }
 
+    // ---------------- 자료 삭제 (영상 또는 자료 한 칸) ----------------
+    @Operation(summary = "강의 자료 삭제",
+            description = "26번 자료업로드 화면. 영상(video) 또는 자료(material) 한 칸을 비우고 저장된 파일을 지운다. "
+                    + "user_id 는 JWT 에서 추출한다. 본인 강의만.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "삭제 성공"),
+            @ApiResponse(responseCode = "400", description = "slot 이 video/material 이 아님"),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(responseCode = "404", description = "강의 없음 또는 권한 없음"),
+            @ApiResponse(responseCode = "500", description = "서버 에러")
+    })
+    @DeleteMapping("/{lid}/files/{slot}")
+    public ResponseEntity<Map<String, String>> deleteFile(
+            @PathVariable("lid") int lid,
+            @Parameter(description = "video 또는 material")
+            @PathVariable("slot") String slot,
+            HttpServletRequest request) {
+        long instructorUserId = jwtUtil.getUid(request);
+        try {
+            lectureService.deleteFile(lid, instructorUserId, slot);
+        } catch (LectureService.NotFoundOrForbidden e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "강의 정보 없음");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return ResponseEntity.ok(Map.of("message", "파일을 삭제했습니다."));
+    }
+
+    // ---------------- 과제 설정 ----------------
+    @Operation(summary = "강의 과제 설정",
+            description = "JSON { title, content, fileType }. title 을 비우면 과제를 없앤다. 본인 강의만. "
+                    + "학생은 이 과제에 파일·내용을 제출하고, 강사는 과제 피드백 화면에서 확인·코멘트한다.")
+    @PutMapping("/{lid}/assignment")
+    public ResponseEntity<Map<String, String>> updateAssignment(
+            @PathVariable("lid") int lid,
+            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request) {
+        long instructorUserId = jwtUtil.getUid(request);
+        Map<String, String> b = body == null ? Map.of() : body;
+        try {
+            lectureService.updateAssignment(lid, instructorUserId, b.get("title"), b.get("content"), b.get("fileType"));
+        } catch (LectureService.NotFoundOrForbidden e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "강의 정보 없음");
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+        return ResponseEntity.ok(Map.of("message", "과제를 저장했습니다."));
+    }
+
     /** 폼 파라미터를 LectureSaveRequest 로 모은다. */
     private LectureSaveRequest toRequest(String name, String category, String level,
                                          String headline, String summary, Integer price, String status) {
         LectureSaveRequest req = new LectureSaveRequest();
         req.setName(name);
-        req.setCategory(category);
-        req.setLevel(level);
+        req.setCategory(category.trim());
+        req.setLevel(level.trim());
         req.setHeadline(headline);
         req.setSummary(summary);
         req.setPrice(price);
         req.setStatus(status);
         return req;
+    }
+
+    /** 카테고리·난이도는 정해진 목록 값만 받는다. */
+    private void checkOptions(String category, String level) {
+        if (!LectureOptions.isCategory(category)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "카테고리는 " + String.join(", ", LectureOptions.CATEGORIES) + " 중 하나여야 합니다.");
+        }
+        if (!LectureOptions.isLevel(level)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "난이도는 " + String.join(", ", LectureOptions.LEVELS) + " 중 하나여야 합니다.");
+        }
     }
 
     private boolean isBlank(String s) {

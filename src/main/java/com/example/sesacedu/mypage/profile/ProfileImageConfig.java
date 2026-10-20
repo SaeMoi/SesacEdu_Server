@@ -24,8 +24,8 @@ import java.util.concurrent.TimeUnit;
  *
  * - GET /images/profile/{파일명}: 인증 없이 열리는 정적 경로. 업로드 폴더 하나만 연결하고
  *   {user_id}_profile.png 형식 외 파일은 404. nosniff, inline, public max-age=86400.
- * - multipart 한도: 파일 10MB / 요청 11MB. 명세 한도(5MB)는 컨트롤러가 직접 검사해 413 FILE_TOO_LARGE를 준다.
- *   10MB를 넘는 요청은 MaxUploadSizeExceededException → edit_prof의 처리기에서 같은 413.
+ * - multipart 한도: 파일 200MB / 요청 210MB (강의 영상 업로드 기준). 명세 한도(5MB)는 컨트롤러가 직접 검사해 413 FILE_TOO_LARGE를 준다.
+ *   200MB를 넘는 요청은 MaxUploadSizeExceededException → edit_prof의 처리기에서 같은 413.
  *   resolveLazily: 업로드 본문을 컨트롤러 인자 처리 때 읽어야 컨트롤러의 @ExceptionHandler가 413을 잡을 수 있다.
  *   (이 두 빈이 있으면 application.yml의 spring.servlet.multipart.* 는 쓰이지 않는다)
  * - Tomcat swallowAbortedUploads: 10MB 초과로 업로드를 중단해도 남은 본문을 읽어 버린 뒤 응답한다.
@@ -81,8 +81,9 @@ public class ProfileImageConfig implements WebMvcConfigurer {
     @Bean
     public MultipartConfigElement multipartConfigElement() {
         MultipartConfigFactory f = new MultipartConfigFactory();
-        f.setMaxFileSize(DataSize.ofMegabytes(10));
-        f.setMaxRequestSize(DataSize.ofMegabytes(11));
+        // 강의 영상 업로드(최대 200MB)도 이 설정을 쓴다. 프로필 사진 5MB 한도는 컨트롤러가 따로 검사한다.
+        f.setMaxFileSize(DataSize.ofMegabytes(200));
+        f.setMaxRequestSize(DataSize.ofMegabytes(210));
         return f.createMultipartConfig();
     }
 

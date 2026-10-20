@@ -5,6 +5,8 @@ import com.example.sesacedu.instructor.feedback.dto.AssignmentDetail;
 import com.example.sesacedu.instructor.feedback.dto.AssignmentDownload;
 import com.example.sesacedu.instructor.feedback.dto.AssignmentListItem;
 import com.example.sesacedu.instructor.feedback.dto.AssignmentPageResponse;
+import com.example.sesacedu.student.lecture.LectureFileStorage;
+import com.example.sesacedu.student.lecture.StoredFile;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -23,10 +25,13 @@ public class FeedbackService {
 
     private final FeedbackRepository feedbackRepository;
     private final FileStorage fileStorage;
+    private final LectureFileStorage lectureFileStorage;
 
-    public FeedbackService(FeedbackRepository feedbackRepository, FileStorage fileStorage) {
+    public FeedbackService(FeedbackRepository feedbackRepository, FileStorage fileStorage,
+                           LectureFileStorage lectureFileStorage) {
         this.feedbackRepository = feedbackRepository;
         this.fileStorage = fileStorage;
+        this.lectureFileStorage = lectureFileStorage;
     }
 
     /** 목록 (페이지네이션 + status 필터) */
@@ -60,8 +65,26 @@ public class FeedbackService {
         if (info.workPath == null || info.workPath.isBlank()) {
             throw new FileNotFound();
         }
-        String url = fileStorage.getDownloadUrl(info.workPath);
-        return new AssignmentDownload(info.work, url);
+        // 실제 파일은 GET /instructor/assignments/{aid}/file 이 보낸다 (Authorization 필요)
+        return new AssignmentDownload(info.work, "/instructor/assignments/" + aid + "/file");
+    }
+
+    /** 과제 제출 파일 자체. 저장소에 파일이 없으면 FileNotFound. */
+    public StoredFile getFile(int aid, long instructorUserId) {
+        FeedbackRepository.FileInfo info = feedbackRepository.findFileInfo(aid, instructorUserId);
+        if (info == null) {
+            throw new NotFoundOrForbidden();
+        }
+        if (info.workPath == null || info.workPath.isBlank()) {
+            throw new FileNotFound();
+        }
+        try {
+            return new StoredFile(
+                    lectureFileStorage.resolve(info.workPath, "SUBMISSION_FILE_NOT_FOUND", "제출 파일이 없습니다."),
+                    info.work == null ? "assignment" : info.work);
+        } catch (com.example.sesacedu.global.exception.ApiException e) {
+            throw new FileNotFound();
+        }
     }
 
     /** 피드백 저장 (작성·수정 공통) */

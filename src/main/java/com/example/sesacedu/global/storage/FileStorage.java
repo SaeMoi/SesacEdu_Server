@@ -22,4 +22,10 @@ public interface FileStorage {
      * @return 접근 URL
      */
     String getDownloadUrl(String path);
+
+    /**
+     * store() 로 저장했던 파일을 지운다. 없거나 이 저장소 밖 경로면 아무것도 하지 않는다.
+     * @param path store() 가 반환했던 경로
+     */
+    void delete(String path);
 }

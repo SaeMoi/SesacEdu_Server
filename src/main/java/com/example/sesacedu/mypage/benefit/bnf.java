@@ -28,7 +28,6 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * targetCourse는 coupons.Lid가 있으면 { courseId, title }, NULL(전체 강의)이면 null. 쿠폰 코드 원문은 내리지 않는다.
  *
  * pointBalance는 users.point (단일 잔액, 이력 없음). 회원 행이 없으면 0.
- * ERD 2026-10-13에 users.point가 없어 buy.POINTS_ENABLED = false인 동안은 항상 0 (필드는 그대로 둔다).
  * 의도된 취약점 없음. 포인트 lost update는 적립·사용(결제) 쪽, 할인 금액 범위 문제는 강사 쿠폰 발행·결제 쿠폰 적용에 둔다.
  */
 @RestController

@@ -59,7 +59,7 @@ class MypageBuyApiTest {
         me = id("me@example.test");
         other = id("other@example.test");
         empty = id("empty@example.test");
-        // ERD 2026-10-13: users.point 없음 (buy.POINTS_ENABLED = false) → 잔액은 모두 0
+        // users.point 기본값 0. 포인트가 있는 경우는 point 테스트에서 UPDATE 로 준다
 
         lecture(7, "리눅스 입문", 39000, "open");
         lecture(12, "웹 보안 기초", 49000, "open");
@@ -318,7 +318,7 @@ class MypageBuyApiTest {
 
     // ------------------------------------------------------------ GET /mypage/buy/pnt
 
-    @Test @DisplayName("포인트 적용 200: 포인트 보류 중이라 usePoint 0만 통과, 응답 모양(summary·point)은 그대로, DB 변경 없음")
+    @Test @DisplayName("포인트 적용 200: 잔액 0이면 usePoint 0만 통과, 응답 모양(summary·point)은 그대로, DB 변경 없음")
     void pointApplied() throws Exception {
         mvc.perform(get("/mypage/buy/pnt?courseIds=12,7&couponId=9001&usePoint=0").header("Authorization", bearer(me)))
                 .andExpect(status().isOk())
@@ -337,7 +337,7 @@ class MypageBuyApiTest {
         assertEquals(5, unusedCoupons(me));
     }
 
-    @Test @DisplayName("포인트 적용 400 INVALID_POINT: 포인트 보류 중이라 1 이상이면 EXCEEDS_BALANCE (잔액 0)")
+    @Test @DisplayName("포인트 적용 400 INVALID_POINT: 잔액 0이면 1 이상은 EXCEEDS_BALANCE")
     void pointInvalid() throws Exception {
         mvc.perform(get("/mypage/buy/pnt?courseIds=12,7&usePoint=1").header("Authorization", bearer(me)))
                 .andExpect(status().isBadRequest())
@@ -346,6 +346,36 @@ class MypageBuyApiTest {
                 .andExpect(jsonPath("$.result.maxUsablePoint").value(0))
                 .andExpect(jsonPath("$.result.balance").value(0))
                 .andExpect(jsonPath("$.result.reason").value("EXCEEDS_BALANCE"));
+    }
+
+    @Test @DisplayName("포인트 적용 200/400: 잔액이 있으면 쿠폰 적용 후 금액까지 쓸 수 있고, 잔액·주문 금액을 넘으면 INVALID_POINT. 잔액은 그대로")
+    void pointWithBalance() throws Exception {
+        jdbc.update("UPDATE users SET point = 100000 WHERE user_id = ?", me);
+        mvc.perform(get("/mypage/buy/pnt?courseIds=12,7&couponId=9001&usePoint=3000").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("POINT_APPLIED"))
+                .andExpect(jsonPath("$.result.summary.couponDiscountAmount").value(5000))
+                .andExpect(jsonPath("$.result.summary.usePoint").value(3000))
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(80000))
+                .andExpect(jsonPath("$.result.point.balance").value(100000))
+                .andExpect(jsonPath("$.result.point.maxUsable").value(83000));
+        mvc.perform(get("/mypage/buy/pnt?courseIds=12,7&couponId=9001&usePoint=83001").header("Authorization", bearer(me)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_POINT"))
+                .andExpect(jsonPath("$.result.maxUsablePoint").value(83000))
+                .andExpect(jsonPath("$.result.reason").value("EXCEEDS_ORDER_AMOUNT"));
+
+        jdbc.update("UPDATE users SET point = 2000 WHERE user_id = ?", me);
+        mvc.perform(get("/mypage/buy").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.point.balance").value(2000))
+                .andExpect(jsonPath("$.result.point.maxUsable").value(2000));
+        mvc.perform(get("/mypage/buy/pnt?courseIds=12,7&usePoint=2001").header("Authorization", bearer(me)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.result.maxUsablePoint").value(2000))
+                .andExpect(jsonPath("$.result.balance").value(2000))
+                .andExpect(jsonPath("$.result.reason").value("EXCEEDS_BALANCE"));
+        assertEquals(2000L, jdbc.queryForObject("SELECT point FROM users WHERE user_id = ?", Long.class, me));
     }
 
     @Test @DisplayName("포인트 적용 400/409/401: 입력 오류, 쿠폰 불가, 장바구니 변경, 토큰 없음이 먼저")
@@ -403,16 +433,53 @@ class MypageBuyApiTest {
         assertEquals("pending", order.get("STATUS"));
         assertTrue(((String) order.get("ONO")).matches("ORD-\\d{8}-" + oid));
         assertNull(order.get("PAID_AT"));
-        // ERD: Aprice = SUM(order_items.price) - discount (포인트 보류라 차이 0)
+        assertEquals(0L, ((Number) order.get("USE_POINT")).longValue());
+        // Aprice = SUM(order_items.price) - discount - use_point
         assertEquals(0L, jdbc.queryForObject(
-                "SELECT SUM(oi.price) - o.discount - o.Aprice FROM orders o JOIN order_items oi ON oi.oid = o.oid"
-                        + " WHERE o.oid = ? GROUP BY o.discount, o.Aprice", Long.class, oid));
+                "SELECT SUM(oi.price) - o.discount - o.use_point - o.Aprice FROM orders o JOIN order_items oi ON oi.oid = o.oid"
+                        + " WHERE o.oid = ? GROUP BY o.discount, o.use_point, o.Aprice", Long.class, oid));
         assertEquals(1L, jdbc.queryForObject(
                 "SELECT COUNT(*) FROM order_items WHERE oid = ? AND Lid = 12 AND Lname = '웹 보안 기초' AND price = 49000", Long.class, oid));
 
         assertEquals(5, unusedCoupons(me));
         assertEquals(3L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ?", Long.class, me));
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM enrollments WHERE user_id = ?", Long.class, me));
+    }
+
+    @Test @DisplayName("주문 생성 201: usePoint를 orders.use_point에 저장하고 Aprice에서 뺀다. pending이면 잔액은 아직 그대로")
+    void orderCreatedWithPoints() throws Exception {
+        jdbc.update("UPDATE users SET point = 10000 WHERE user_id = ?", me);
+        String res = mvc.perform(post("/mypage/buy").header("Authorization", bearer(me)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"courseIds\":[12,7],\"couponId\":9001,\"usePoint\":3000,\"payMethod\":\"CARD\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("ORDER_CREATED"))
+                .andExpect(jsonPath("$.result.amount").value(80000))
+                .andExpect(jsonPath("$.result.summary.usePoint").value(3000))
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(80000))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        long oid = Long.parseLong(res.replaceAll(".*\"orderId\":(\\d+).*", "$1"));
+        Map<String, Object> order = jdbc.queryForMap("SELECT * FROM orders WHERE oid = ?", oid);
+        assertEquals(5000L, ((Number) order.get("DISCOUNT")).longValue());
+        assertEquals(3000L, ((Number) order.get("USE_POINT")).longValue());
+        assertEquals(80000L, ((Number) order.get("APRICE")).longValue());
+        assertEquals(10000L, jdbc.queryForObject("SELECT point FROM users WHERE user_id = ?", Long.class, me));
+    }
+
+    @Test @DisplayName("주문 생성 201 ORDER_COMPLETED: 포인트로 0원이 되면 바로 paid, 잔액 차감, use_point 저장")
+    void orderCompletedByPoints() throws Exception {
+        jdbc.update("UPDATE users SET point = 50000 WHERE user_id = ?", me);
+        mvc.perform(post("/mypage/buy").header("Authorization", bearer(me)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"courseIds\":[7],\"usePoint\":39000,\"payMethod\":\"CARD\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value("ORDER_COMPLETED"))
+                .andExpect(jsonPath("$.result.summary.usePoint").value(39000))
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(0));
+        Map<String, Object> order = jdbc.queryForMap("SELECT * FROM orders WHERE user_id = ?", me);
+        assertEquals("paid", order.get("STATUS"));
+        assertEquals(39000L, ((Number) order.get("USE_POINT")).longValue());
+        assertEquals(0L, ((Number) order.get("APRICE")).longValue());
+        assertEquals(11000L, jdbc.queryForObject("SELECT point FROM users WHERE user_id = ?", Long.class, me));
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND Lid = 7", Long.class, me));
     }
 
     @Test @DisplayName("주문 생성 201 ORDER_COMPLETED: 0원이면 바로 paid, 쿠폰 사용·수강 등록·장바구니 삭제")

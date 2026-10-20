@@ -44,12 +44,10 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * → 5-b. 최종 0원: PG 없이 한 트랜잭션으로 orders(status 'paid', pay NULL) + order_items + 쿠폰 used = 1 + 포인트 차감
  *        + enrollments 등록 + 장바구니에서 삭제 → 201 ORDER_COMPLETED { orderId, summary, courseIds }.
  *
- * 포인트 저장 (Kim 결정 2026-10-13): orders에 use_point 컬럼이 없다. 주문당 쿠폰 1장, orders.discount = 쿠폰 할인액,
- * orders.Aprice = 실제 결제액이므로 포인트 사용액 = SUM(order_items.price) − discount − Aprice로 되찾는다.
+ * 포인트 저장 (Kim 2026-10-19): orders.use_point에 이 주문의 포인트 사용액을 넣는다. 주문당 쿠폰 1장,
+ * orders.discount = 쿠폰 할인액, orders.Aprice = 실제 결제액 = SUM(order_items.price) − discount − use_point.
  * ono는 "ORD-yyyyMMdd-{oid}" (KST). 금액은 모두 DB 값으로 서버가 계산하고 본문의 amount·price·discount는 무시한다.
  * 0원 완료의 쿠폰·포인트 차감은 조건부 UPDATE(used = 0, point >= 사용액)라 0행이면 롤백한다.
- * ERD 2026-10-13에 users.point가 없어 buy.POINTS_ENABLED = false: 잔액 0이라 usePoint가 0이 아니면 4번에서 INVALID_POINT,
- * 포인트 차감 UPDATE는 실행하지 않는다 (요청·응답 모양은 그대로).
  *
  * 의도된 취약점 없음 (기본 설계). 명세 「의도된 취약점」 후보: 요청 금액 신뢰(가격 조작), 할인 clamp 제거,
  * 포인트 lost update(결제 승인), 순차 oid 열거(결제 상세·영수증).
@@ -123,7 +121,8 @@ public class buy_order {
         // 5-a. 결제할 금액이 있으면 pending 주문만 만든다
         if (finalAmount > 0) {
             final Long couponId = cid;
-            long oid = Objects.requireNonNull(tx.execute(status -> insertOrder(userId, couponId, q, finalAmount, pay, "pending", names)));
+            final long point = usePoint;
+            long oid = Objects.requireNonNull(tx.execute(status -> insertOrder(userId, couponId, q, point, finalAmount, pay, "pending", names)));
             log.info("order created oid={} user={} amount={}", oid, userId, finalAmount);
             List<String> titles = new ArrayList<>();
             for (Long id : ids) titles.add(names.get(id));
@@ -140,7 +139,7 @@ public class buy_order {
         final Long couponId = cid;
         final long point = usePoint;
         Object done = tx.execute(status -> {
-            long oid = insertOrder(userId, couponId, q, 0, null, "paid", names);
+            long oid = insertOrder(userId, couponId, q, point, 0, null, "paid", names);
             if (couponId != null && jdbc.update(
                     "UPDATE user_coupons SET used = 1, used_at = LOCALTIMESTAMP WHERE user_id = ? AND cid = ? AND used = 0",
                     userId, couponId) == 0) {
@@ -191,20 +190,21 @@ public class buy_order {
     }
 
     /** orders 1행 + order_items 스냅샷. 생성된 oid를 돌려준다 (트랜잭션 안에서 부른다) */
-    private long insertOrder(long userId, Long couponId, buy.Quote q, long aprice, String pay, String status,
+    private long insertOrder(long userId, Long couponId, buy.Quote q, long usePoint, long aprice, String pay, String status,
                              Map<Long, String> names) {
         KeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO orders (user_id, cid, discount, Aprice, pay, status, created, paid_at)"
-                            + " VALUES (?, ?, ?, ?, ?, ?, LOCALTIMESTAMP, " + ("paid".equals(status) ? "LOCALTIMESTAMP" : "NULL") + ")",
+                    "INSERT INTO orders (user_id, cid, discount, use_point, Aprice, pay, status, created, paid_at)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?, LOCALTIMESTAMP, " + ("paid".equals(status) ? "LOCALTIMESTAMP" : "NULL") + ")",
                     new String[]{"OID"});
             ps.setLong(1, userId);
             ps.setObject(2, couponId);
             ps.setLong(3, q.couponDiscount);
-            ps.setLong(4, aprice);
-            ps.setString(5, pay);
-            ps.setString(6, status);
+            ps.setLong(4, usePoint);
+            ps.setLong(5, aprice);
+            ps.setString(6, pay);
+            ps.setString(7, status);
             return ps;
         }, key);
         long oid = Objects.requireNonNull(key.getKey()).longValue();

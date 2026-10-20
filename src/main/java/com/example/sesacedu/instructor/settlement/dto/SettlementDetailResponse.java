@@ -8,10 +8,10 @@ import java.util.List;
  */
 public class SettlementDetailResponse {
 
-    private int sid;
+    private Integer sid;        // 정산 행이 아직 없는 달은 null
     private String period;
     private String status;
-    private long totalAmount;   // 정산 합계 (settlements.amount)
+    private long totalAmount;   // 정산 합계 (승인·지급은 저장값, 그 외는 주문에서 계산)
     private String bank;
     private String account;
     private String payDate;     // 지급 예정/완료일 (없으면 null = "승인 후 안내")
@@ -24,7 +24,7 @@ public class SettlementDetailResponse {
     public SettlementDetailResponse() {
     }
 
-    public SettlementDetailResponse(int sid, String period, String status, long totalAmount,
+    public SettlementDetailResponse(Integer sid, String period, String status, long totalAmount,
                                     String bank, String account, String payDate,
                                     int page, int size, long totalElements, int totalPages,
                                     List<SettlementLectureItem> lectures) {
@@ -42,8 +42,8 @@ public class SettlementDetailResponse {
         this.lectures = lectures;
     }
 
-    public int getSid() { return sid; }
-    public void setSid(int sid) { this.sid = sid; }
+    public Integer getSid() { return sid; }
+    public void setSid(Integer sid) { this.sid = sid; }
 
     public String getPeriod() { return period; }
     public void setPeriod(String period) { this.period = period; }

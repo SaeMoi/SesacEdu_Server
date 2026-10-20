@@ -55,7 +55,8 @@ public class SettlementController {
 
     // ---------------- 상세 ----------------
     @Operation(summary = "정산 상세 조회",
-            description = "정산 합계·계좌 정보와 강의별 매출/공제/정산금액 내역을 조회한다. 강의별 내역은 페이지당 5개 고정.")
+            description = "정산 합계·계좌 정보와 강의별 매출/공제/정산금액 내역을 조회한다. "
+                    + "sid 는 정산 ID 또는 정산 월(2026.10). 정산 행이 아직 없는 달은 정산 월로 조회한다. 강의별 내역은 페이지당 5개 고정.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "401", description = "인증 실패"),
@@ -65,7 +66,7 @@ public class SettlementController {
     })
     @GetMapping("/settlement/{sid}")
     public ResponseEntity<SettlementDetailResponse> getDetail(
-            @PathVariable("sid") int sid,
+            @PathVariable("sid") String sid,
             @Parameter(description = "강의별 내역 페이지 번호 (기본 1)")
             @RequestParam(value = "page", defaultValue = "1") int page,
             HttpServletRequest request) {

@@ -1,6 +1,7 @@
 package com.example.sesacedu.instructor.lecture;
 
 import com.example.sesacedu.global.storage.FileStorage;
+import com.example.sesacedu.global.storage.LectureThumbnail;
 import com.example.sesacedu.instructor.lecture.dto.LectureDetail;
 import com.example.sesacedu.instructor.lecture.dto.LectureListItem;
 import com.example.sesacedu.instructor.lecture.dto.LectureSaveRequest;
@@ -66,15 +67,23 @@ public class LectureService {
     /**
      * 강의 등록. 기본정보 + 썸네일을 저장한다.
      * status(open/closed/draft)는 필수이며 컨트롤러에서 검증된 값이 들어온다(요청 그대로 저장).
-     * 썸네일도 필수(컨트롤러에서 검증).
+     * 썸네일은 선택. 안 보내면 picture 는 NULL 이고 조회 시 서버 기본 썸네일 주소가 나간다.
      * @return 생성된 lid
      */
     public int create(long instructorUserId, LectureSaveRequest req, MultipartFile thumbnail) {
         // status 는 컨트롤러에서 open/closed/draft 로 검증됨. draft 로 떨어뜨리지 않고 요청 값 그대로 저장한다.
         String status = req.getStatus().trim().toLowerCase(Locale.ROOT);
+        // 확장자 검사를 먼저 해서, 형식이 틀리면 강의 행을 만들지 않는다.
+        boolean hasThumbnail = thumbnail != null && !thumbnail.isEmpty();
+        if (hasThumbnail) checkThumbnailType(thumbnail);
         int lid = lectureRepository.insert(instructorUserId, req, status);
-        storeThumbnail(lid, thumbnail);
+        if (hasThumbnail) storeThumbnail(lid, thumbnail);
         return lid;
+    }
+
+    /** 강사 정보(instructors 행)가 있는 계정인지. */
+    public boolean isInstructor(long userId) {
+        return lectureRepository.isInstructor(userId);
     }
 
     /**
@@ -127,15 +136,53 @@ public class LectureService {
         }
     }
 
+    /**
+     * 자료 삭제. slot 은 video 또는 material. DB 칸을 비우고 저장된 파일도 지운다. 본인 강의만.
+     */
+    public void deleteFile(int lid, long instructorUserId, String slot) {
+        if (!lectureRepository.isOwnedByInstructor(lid, instructorUserId)) {
+            throw new NotFoundOrForbidden();
+        }
+        if (!"video".equals(slot) && !"material".equals(slot)) {
+            throw new IllegalArgumentException("삭제할 파일 종류는 video 또는 material 이어야 합니다.");
+        }
+        String path = lectureRepository.findFilePath(lid, slot);
+        if ("video".equals(slot)) {
+            lectureRepository.updateVideo(lid, null, null);
+        } else {
+            lectureRepository.updateMaterial(lid, null, null);
+        }
+        fileStorage.delete(path);
+    }
+
+    /** 과제 설정. 본인 강의만. title 이 비면 과제를 없앤다. */
+    public void updateAssignment(int lid, long instructorUserId, String title, String content, String fileType) {
+        if (!lectureRepository.isOwnedByInstructor(lid, instructorUserId)) {
+            throw new NotFoundOrForbidden();
+        }
+        String t = title == null || title.isBlank() ? null : title.trim();
+        if (t != null && t.length() > 200) throw new IllegalArgumentException("과제 제목은 200자까지입니다.");
+        String f = fileType == null || fileType.isBlank() ? null : fileType.trim();
+        if (f != null && f.length() > 100) throw new IllegalArgumentException("제출 파일 형식 안내는 100자까지입니다.");
+        String c = content == null || content.isBlank() ? null : content;
+        lectureRepository.updateAssignment(lid, t, t == null ? null : c, t == null ? null : f);
+    }
+
     // ---------------- 헬퍼 ----------------
 
-    private void storeThumbnail(int lid, MultipartFile thumbnail) {
+    private void checkThumbnailType(MultipartFile thumbnail) {
         String ext = extensionOf(thumbnail.getOriginalFilename());
         if (!IMAGE_EXT.contains(ext)) {
             throw new UnsupportedFileType("썸네일은 이미지(png/jpg/jpeg/svg/gif/webp)만 가능합니다: " + ext);
         }
-        String path = fileStorage.store(thumbnail, "lecture/picture");
-        lectureRepository.updatePicture(lid, path);
+    }
+
+    /** {저장소}/lecture/picture/ 에 저장하고 DB 에는 공개 주소 /images/lecture/{파일명} 을 넣는다. */
+    private void storeThumbnail(int lid, MultipartFile thumbnail) {
+        checkThumbnailType(thumbnail);
+        String path = fileStorage.store(thumbnail, LectureThumbnail.STORAGE_PREFIX);
+        String fileName = path.substring(path.lastIndexOf('/') + 1);
+        lectureRepository.updatePicture(lid, LectureThumbnail.URL_PATH + fileName);
     }
 
     private String extensionOf(String filename) {

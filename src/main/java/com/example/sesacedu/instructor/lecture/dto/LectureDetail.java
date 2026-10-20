@@ -34,6 +34,10 @@ public class LectureDetail {
     @JsonProperty("material_filename")
     private String materialFilename;  // 자료 원본 파일명 (DB: material_filename)
 
+    private String assignmentTitle;     // 과제 제목 (DB: assignment_title). NULL 이면 과제 없음
+    private String assignmentContent;   // 과제 안내 (DB: assignment_content)
+    private String assignmentFileType;  // 제출 파일 형식 안내 (DB: assignment_file_type)
+
     public LectureDetail() {
     }
 
@@ -69,4 +73,13 @@ public class LectureDetail {
 
     public String getMaterialFilename() { return materialFilename; }
     public void setMaterialFilename(String materialFilename) { this.materialFilename = materialFilename; }
+
+    public String getAssignmentTitle() { return assignmentTitle; }
+    public void setAssignmentTitle(String assignmentTitle) { this.assignmentTitle = assignmentTitle; }
+
+    public String getAssignmentContent() { return assignmentContent; }
+    public void setAssignmentContent(String assignmentContent) { this.assignmentContent = assignmentContent; }
+
+    public String getAssignmentFileType() { return assignmentFileType; }
+    public void setAssignmentFileType(String assignmentFileType) { this.assignmentFileType = assignmentFileType; }
 }

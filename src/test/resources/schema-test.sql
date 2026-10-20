@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
     auth NUMBER(1) DEFAULT 0 NOT NULL CHECK (auth IN (0,1,2,3,4)),
     status VARCHAR2(20) DEFAULT 'active' NOT NULL CHECK (status IN ('active','restricted')),
     created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated TIMESTAMP
+    updated TIMESTAMP,
+    point NUMBER(19) DEFAULT 0 NOT NULL         -- 포인트 잔액 (add_points.sql, Kim 2026-10-19)
 );
 
 -- 내 학습(GET /mypage/courses)·내 Q&A(GET /mypage/qna) 테스트용. 컬럼은 db/schema.sql(ERD 2026-10-12)의 일부와 같다.
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS orders (
     user_id NUMBER(19) NOT NULL,
     cid NUMBER(19),
     discount NUMBER(10) DEFAULT 0 NOT NULL,
+    use_point NUMBER(10) DEFAULT 0 NOT NULL,   -- 이 주문의 포인트 사용액 (add_points.sql)
     Aprice NUMBER(10) DEFAULT 0 NOT NULL,
     pay VARCHAR2(20),
     status VARCHAR2(20) DEFAULT 'pending' NOT NULL,

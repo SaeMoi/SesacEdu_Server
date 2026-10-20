@@ -295,7 +295,7 @@ class MypageCartBenefitApiTest {
 
     // ------------------------------------------------------------ GET /mypage/bnf
 
-    @Test @DisplayName("나의해택 200: 미사용·미만료만 만료 임박순, targetCourse, 건수, pointBalance 0 (포인트 보류)")
+    @Test @DisplayName("나의해택 200: 미사용·미만료만 만료 임박순, targetCourse, 건수, pointBalance 0 (기본값)")
     void benefits() throws Exception {
         mvc.perform(get("/mypage/bnf").header("Authorization", bearer(me)))
                 .andExpect(status().isOk())
@@ -315,6 +315,14 @@ class MypageCartBenefitApiTest {
                 .andExpect(jsonPath("$.result.coupons[1].targetCourse").value(nullValue()))
                 .andExpect(jsonPath("$.result.page.totalElements").value(2))
                 .andExpect(jsonPath("$.result.page.hasNext").value(false));
+    }
+
+    @Test @DisplayName("나의해택 200: pointBalance는 users.point")
+    void benefitsPointBalance() throws Exception {
+        jdbc.update("UPDATE users SET point = 1500 WHERE user_id = ?", me);
+        mvc.perform(get("/mypage/bnf").header("Authorization", bearer(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.summary.pointBalance").value(1500));
     }
 
     @Test @DisplayName("나의해택 200: 페이징, 쿠폰 없으면 coupons: []")

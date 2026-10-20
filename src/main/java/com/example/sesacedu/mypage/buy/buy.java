@@ -27,7 +27,7 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * 처리 순서: 1. Authorization의 JWT 검증 (없음·위조 401 UNAUTHORIZED, 만료 401 TOKEN_EXPIRED)
  * → 2. 내 cart + lectures 조인 전체 (Lid DESC, open 아니면 purchasable false)
  * → 3. 내 미사용·미만료 쿠폰 (discount DESC), 장바구니의 구매 가능 항목과 대조해 applicable·expectedDiscount
- * → 4. users.point 잔액, maxUsable = LEAST(잔액, productAmount). 지금은 POINTS_ENABLED = false라 둘 다 0
+ * → 4. users.point 잔액, maxUsable = LEAST(잔액, productAmount)
  * → 5. 200 CHECKOUT_ITEMS_FOUND { items, itemCount, coupons, point, orderName, payMethods, summary }.
  * 조회 전용 (주문·차감 없음). 대상은 토큰 sub로만 정한다 (IDOR 없음). 개인정보라 Cache-Control: no-store.
  *
@@ -252,7 +252,7 @@ public class buy {
         Map<Long, Long> prices;          // 주문 강좌 Lid → 현재 Lprice (요청 순서)
         long productAmount;
         long couponDiscount;             // 쿠폰 없으면 0
-        long balance;                    // users.point (POINTS_ENABLED = false면 0)
+        long balance;                    // users.point
         long maxUsable;                  // LEAST(balance, 쿠폰 적용 후 금액)
 
         long afterCoupon() {
@@ -284,6 +284,7 @@ public class buy {
             // 항상 user_id = 나 조건으로 찾는다 (남의 cid도 없음)
             List<Map<String, Object>> rows = jdbc.queryForList(
                     "SELECT c.discount AS discount, c.Lid AS target_course_id, uc.used AS used, c.min_amount AS min_amount,"
+                            + "       c.user_id AS issuer_id,"
                             + "       CASE WHEN c.due >= SYSTIMESTAMP THEN 0 ELSE 1 END AS expired"
                             + "  FROM user_coupons uc JOIN coupons c ON c.cid = uc.cid"
                             + " WHERE uc.user_id = ? AND uc.cid = ?", userId, couponId);
@@ -292,6 +293,8 @@ public class buy {
                     ? null : num(coupon.get("TARGET_COURSE_ID"));
             String reason = null;
             if (coupon == null) reason = "COUPON_NOT_FOUND";
+            // 강사는 본인이 발행한 쿠폰을 쓸 수 없다 (Kim 2026-10-19)
+            else if (num(coupon.get("ISSUER_ID")) == userId) reason = "OWN_COUPON";
             else if (num(coupon.get("USED")) != 0) reason = "ALREADY_USED";
             else if (num(coupon.get("EXPIRED")) != 0) reason = "EXPIRED";
             else if (targetId != null && !q.prices.containsKey(targetId)) reason = "TARGET_COURSE_NOT_IN_ORDER";
@@ -323,12 +326,12 @@ public class buy {
     }
 
     /**
-     * 포인트 기능 스위치. ERD 2026-10-13에 users.point가 없어(「포인트 잔액·차감은 결제 계산 정책을 정한 뒤 반영」) 꺼 둔다.
-     * 꺼져 있으면 잔액은 항상 0이라 usePoint가 0이 아니면 기존 400 INVALID_POINT(EXCEEDS_BALANCE)로 막히고,
-     * 응답 모양(point 블록, summary.usePoint, pointBalance)은 그대로 둔다.
-     * 다시 켤 때: users.point 컬럼을 schema.sql·schema-test.sql에 되살리고 이 값을 true로.
+     * 포인트 기능 스위치. users.point·orders.use_point 컬럼을 추가하고 켰다 (Kim 2026-10-19, db/rds-queries/add_points.sql).
+     * 포인트는 관리자 지급과 테스트 시드로만 생긴다 (적립 없음). 환불은 아직 만들지 않아 포인트 반환도 없다.
+     * false로 돌리면 잔액은 항상 0이라 usePoint가 0이 아니면 400 INVALID_POINT(EXCEEDS_BALANCE)로 막히고,
+     * 응답 모양(point 블록, summary.usePoint, pointBalance)은 그대로다.
      */
-    public static final boolean POINTS_ENABLED = false;
+    public static final boolean POINTS_ENABLED = true;
 
     /** users.point. 회원 행이 없거나 포인트 기능이 꺼져 있으면 0 */
     public static long pointBalance(JdbcTemplate jdbc, long userId) {

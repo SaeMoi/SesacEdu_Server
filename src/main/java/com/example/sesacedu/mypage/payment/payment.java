@@ -38,9 +38,7 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * → 9. 200 PAYMENT_COMPLETED { orderId, paymentKey, amount, pay, status, courseIds, approvedAt }.
  *
  * - 금액은 서버 값만: 요청에 amount가 와도 읽지 않는다 (요청 클래스에 필드가 없음). 회원도 토큰 sub로만 정한다.
- * - 포인트 사용액: orders.use_point 컬럼이 db/schema.sql에 없어 SUM(order_items.price) - orders.discount - orders.Aprice로
- *   구한다 (Kim 합의, buy 스레드). 음수면 0. ERD 2026-10-13에 users.point가 없어 buy.POINTS_ENABLED = false인 동안은
- *   잔액이 0이라 사용액이 있는 주문(정상 흐름에서는 생기지 않음)은 409 INSUFFICIENT_POINT, 차감 UPDATE는 실행하지 않는다.
+ * - 포인트 사용액: POST /mypage/buy가 저장한 orders.use_point (Kim 2026-10-19). 요청 값은 읽지 않는다.
  * - 거절·502는 아무것도 쓰지 않으므로 주문은 pending으로 남아 재시도할 수 있다. 가상 PG는 승인된 주문에 멱등이라
  *   시간 초과 뒤 재요청해도 이중 승인이 생기지 않는다.
  * - 승인번호(paymentKey)는 DB에 저장하지 않는다 (CSV 원장 전용, Kim 결정 a안). 결제 정보 원문도 저장·로그하지 않는다.
@@ -88,7 +86,7 @@ public class payment {
     private ResponseEntity<Map<String, Object>> process(long userId, long orderId, PayRequest r) {
         // 3. 내 주문만, 잠금
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT oid, cid, discount, Aprice, pay, status FROM orders WHERE oid = ? AND user_id = ? FOR UPDATE",
+                "SELECT oid, cid, discount, use_point, Aprice, pay, status FROM orders WHERE oid = ? AND user_id = ? FOR UPDATE",
                 orderId, userId);
         if (rows.isEmpty()) {
             return ResponseEntity.status(404).body(body("ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.", null));
@@ -137,7 +135,7 @@ public class payment {
         }
 
         // 6. 포인트·쿠폰 사전 확인 (승인 뒤에 모자라면 돈만 나간 주문이 되므로 PG 호출 전에 본다)
-        long usePoint = Math.max(0, itemsTotal - num(order.get("DISCOUNT")) - aprice);
+        long usePoint = num(order.get("USE_POINT"));
         jdbc.queryForList("SELECT user_id FROM users WHERE user_id = ? FOR UPDATE", Long.class, userId);
         long point = buy.pointBalance(jdbc, userId);
         if (point < usePoint) {

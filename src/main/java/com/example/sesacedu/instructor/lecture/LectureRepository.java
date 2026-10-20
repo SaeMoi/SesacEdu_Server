@@ -1,5 +1,6 @@
 package com.example.sesacedu.instructor.lecture;
 
+import com.example.sesacedu.global.storage.LectureThumbnail;
 import com.example.sesacedu.instructor.lecture.dto.LectureDetail;
 import com.example.sesacedu.instructor.lecture.dto.LectureListItem;
 import com.example.sesacedu.instructor.lecture.dto.LectureSaveRequest;
@@ -90,9 +91,12 @@ public class LectureRepository {
         d.setSummary(rs.getString("summary"));
         d.setPrice(rs.getInt("Lprice"));
         d.setStatus(rs.getString("status"));
-        d.setPicture(rs.getString("picture"));
+        d.setPicture(LectureThumbnail.urlOf(rs.getString("picture")));
         d.setVideoFilename(rs.getString("video_filename"));
         d.setMaterialFilename(rs.getString("material_filename"));
+        d.setAssignmentTitle(rs.getString("assignment_title"));
+        d.setAssignmentContent(rs.getString("assignment_content"));
+        d.setAssignmentFileType(rs.getString("assignment_file_type"));
         return d;
     };
 
@@ -100,7 +104,8 @@ public class LectureRepository {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT Lid, name, category, LLEVEL AS lvl, headline, summary, Lprice, status, " +
-                            "       picture, video_filename, material_filename " +
+                            "       picture, video_filename, material_filename, " +
+                            "       assignment_title, assignment_content, assignment_file_type " +
                             "FROM lectures WHERE Lid = ? AND user_id = ?",
                     DETAIL_MAPPER, lid, instructorUserId);
         } catch (EmptyResultDataAccessException e) {
@@ -108,7 +113,22 @@ public class LectureRepository {
         }
     }
 
+    /** 강의 과제 설정. title 이 NULL 이면 과제를 없앤다 (학생 화면에 "등록된 과제가 없습니다"). */
+    public void updateAssignment(int lid, String title, String content, String fileType) {
+        jdbcTemplate.update(
+                "UPDATE lectures SET assignment_title = ?, assignment_content = ?, assignment_file_type = ?, " +
+                        "updated = SYSTIMESTAMP WHERE Lid = ?",
+                title, content, fileType, lid);
+    }
+
     // ---------------- 소유권 확인 ----------------
+
+    /** instructors 행이 있는지. 없으면 lectures.user_id FK 에 걸려 등록할 수 없다. */
+    public boolean isInstructor(long userId) {
+        Integer cnt = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM instructors WHERE user_id = ?", Integer.class, userId);
+        return cnt != null && cnt > 0;
+    }
 
     public boolean isOwnedByInstructor(int lid, long instructorUserId) {
         Integer cnt = jdbcTemplate.queryForObject(
@@ -162,6 +182,15 @@ public class LectureRepository {
         jdbcTemplate.update(
                 "UPDATE lectures SET material = ?, material_filename = ? WHERE Lid = ?",
                 path, filename, lid);
+    }
+
+    /** 영상(video) 또는 자료(material) 저장 경로. column 은 서비스에서 둘 중 하나로 검증된 값만 들어온다. */
+    public String findFilePath(int lid, String column) {
+        String sql = "video".equals(column)
+                ? "SELECT video FROM lectures WHERE Lid = ?"
+                : "SELECT material FROM lectures WHERE Lid = ?";
+        List<String> rows = jdbcTemplate.queryForList(sql, String.class, lid);
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     public void updatePicture(int lid, String path) {

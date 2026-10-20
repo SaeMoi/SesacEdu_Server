@@ -1,5 +1,6 @@
 package com.example.sesacedu.mypage.learning;
 
+import com.example.sesacedu.global.storage.LectureThumbnail;
 import com.example.sesacedu.global.JwtUtil;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -127,7 +128,7 @@ public class courses {
             item.put("courseId", num(r.get("COURSE_ID")));
             item.put("category", cat);
             item.put("title", r.get("TITLE"));
-            item.put("thumbnailUrl", r.get("THUMBNAIL_URL"));
+            item.put("thumbnailUrl", LectureThumbnail.urlOf((String) r.get("THUMBNAIL_URL")));
             item.put("status", num(r.get("IS_DONE")) == 1 ? "COMPLETED" : "IN_PROGRESS");
             item.put("enrolledAt", iso(r.get("ENROLLED_AT")));
             item.put("reviewWritten", num(r.get("REVIEW_WRITTEN")) == 1);

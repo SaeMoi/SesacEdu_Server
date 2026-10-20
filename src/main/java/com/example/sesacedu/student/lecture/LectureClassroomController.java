@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -118,6 +119,18 @@ public class LectureClassroomController {
                                   @RequestBody AssignmentSubmitRequest request,
                                   @Parameter(hidden = true) CurrentUser currentUser) {
         return classroomService.submit(lid, currentUser, request);
+    }
+
+    @Operation(summary = "과제 파일 업로드",
+            description = "수강자만 올릴 수 있다. multipart/form-data 의 file 하나 (10MB, pdf/zip/docx/hwp/pptx/png/jpg/txt). "
+                    + "응답의 work·workFilename 을 과제 제출·수정 요청에 그대로 넣는다.")
+    @PostMapping(value = "/assignments/file", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public java.util.Map<String, String> uploadWork(@PathVariable("lid") int lid,
+                                                    @RequestParam(value = "file", required = false)
+                                                    org.springframework.web.multipart.MultipartFile file,
+                                                    @Parameter(hidden = true) CurrentUser currentUser) {
+        return classroomService.uploadWork(lid, currentUser, file);
     }
 
     @Operation(summary = "과제 상세 확인",
