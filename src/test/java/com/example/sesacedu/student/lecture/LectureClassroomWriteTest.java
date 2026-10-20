@@ -338,6 +338,18 @@ class LectureClassroomWriteTest {
     }
 
     @Test
+    void 새_파일_없이_고치면_기존_첨부를_유지한다() throws Exception {
+        enrolled(lectureOne(), new EnrollmentProgress(false, 0));
+        when(classroomRepository.findSubmissionById(100)).thenReturn(Optional.of(submission(100, null)));
+        when(classroomRepository.findWorkFile(100)).thenReturn(Optional.of(new String[]{"/files/sub/a.pdf", "a.pdf"}));
+
+        mvcAs(10).perform(put("/lectures/1/assignments/100").header("Authorization", TOKEN)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"note\":\"내용만 수정\"}"))
+                .andExpect(status().isOk());
+        verify(classroomRepository).updateSubmission(100, "/files/sub/a.pdf", "a.pdf", "내용만 수정");
+    }
+
+    @Test
     void 채점된_제출물도_고치고_지울_수_있다() throws Exception {
         enrolled(lectureOne(), new EnrollmentProgress(false, 0));
         when(classroomRepository.findSubmissionById(100)).thenReturn(Optional.of(submission(100, 90)));

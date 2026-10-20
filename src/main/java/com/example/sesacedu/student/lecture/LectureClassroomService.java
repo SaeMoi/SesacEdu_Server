@@ -216,6 +216,7 @@ public class LectureClassroomService {
     public AssignmentResponse.SubmissionResponse modify(int lid, int aid, CurrentUser currentUser,
                                                        AssignmentSubmitRequest request) {
         requireEnrolled(lid, currentUser);
+        keepWork(aid, request);
         validate(request);
 
         storeLink(lid, request);
@@ -263,6 +264,17 @@ public class LectureClassroomService {
     }
 
     /** 파일과 내용 중 하나는 있어야 한다. 파일 없이 낸 경우 원본 파일명도 비운다. */
+    /** 수정 때 새 파일(work)을 안 보내면 기존 첨부를 그대로 둔다. */
+    private void keepWork(int aid, AssignmentSubmitRequest request) {
+        if (request == null || !isBlank(request.getWork())) {
+            return;
+        }
+        classroomRepository.findWorkFile(aid).ifPresent(file -> {
+            request.setWork(file[0]);
+            request.setWorkFilename(file[1]);
+        });
+    }
+
     private void validate(AssignmentSubmitRequest request) {
         if (request == null || (isBlank(request.getWork()) && isBlank(request.getNote()))) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "파일을 첨부하거나 내용을 입력해 주세요.");
