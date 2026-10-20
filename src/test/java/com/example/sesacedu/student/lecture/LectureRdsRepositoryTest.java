@@ -2,6 +2,7 @@ package com.example.sesacedu.student.lecture;
 
 import com.example.sesacedu.student.lecture.dto.ChapterResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * 쓰기는 클래스 전체가 @Transactional 이라 테스트가 끝나면 롤백된다. RDS 데이터는 바뀌지 않는다.
  */
+@EnabledIfEnvironmentVariable(named = "RUN_DB_TESTS", matches = "true")
 @SpringBootTest
 @Transactional
 class LectureRdsRepositoryTest {
