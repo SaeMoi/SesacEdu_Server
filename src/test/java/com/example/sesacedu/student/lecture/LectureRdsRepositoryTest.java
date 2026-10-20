@@ -12,12 +12,13 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * 강의 SQL 을 공유 RDS(.env 의 DB_URL)에서 실제로 실행한다.
+ * 강의 SQL 을 실제 DB(.env 의 DB_URL)에서 실행한다. 로컬에서는 EC2 DB 터널(localhost:1521)로 붙는다.
+ * 팀이 함께 쓰는 DB 라 평소 gradlew test 에서는 건너뛰고, 환경변수 RUN_DB_TESTS=true 일 때만 돈다.
  *
  * 기준 데이터: 강의 40개(1~35 open, 36~38 closed, 39~40 draft), 강의마다 목차 5개,
  * user 31 은 강의 1 수강·리뷰·제출물(aid 1) 보유, user 41 은 강의 2 를 수강하고 리뷰·제출물이 없다.
  *
- * 쓰기는 클래스 전체가 @Transactional 이라 테스트가 끝나면 롤백된다. RDS 데이터는 바뀌지 않는다.
+ * 쓰기는 클래스 전체가 @Transactional 이라 테스트가 끝나면 롤백된다. DB 데이터는 바뀌지 않는다.
  */
 @EnabledIfEnvironmentVariable(named = "RUN_DB_TESTS", matches = "true")
 @SpringBootTest
