@@ -1,14 +1,15 @@
 # 강의 API
 
-강의 목록·상세, 수강 화면(영상·목차·자료·과제·수료), 리뷰, Q&A 를 다룬다. 데이터는 공유 RDS(Oracle 19)에 있고 다른 DB 는 쓰지 않는다.
+강의 목록·상세, 수강 화면(영상·목차·자료·과제·수료), 리뷰, Q&A 를 다룬다. 데이터는 EC2 ② 의 Oracle(Docker, Oracle 26ai Free, `FREEPDB1`)에 있고 다른 DB 는 쓰지 않는다.
 
 ## 실행
 
 `.env` 에 다음 값을 둔다. `.env` 는 git 에 올리지 않는다.
+DB 는 사설 서브넷에 있어서 로컬에서는 `aws login` 뒤 EC2 DB 터널을 열고 `localhost:1521` 로 붙는다(팀 공유 EC2 DB 로컬 접속 가이드).
 
 ```
-DB_URL=jdbc:oracle:thin:@//<RDS 엔드포인트>:1521/<서비스명>
-DB_USER=...
+DB_URL=jdbc:oracle:thin:@//localhost:1521/FREEPDB1
+DB_USERNAME=...   # 예전 이름 DB_USER 도 읽는다
 DB_PASSWORD=...
 JWT_SECRET=...   # 32바이트 이상
 ```
@@ -17,10 +18,14 @@ JDK 11 에서 실행한다.
 
 ```powershell
 .\gradlew.bat bootRun      # http://localhost:8080, Swagger 는 /swagger
-.\gradlew.bat test         # 테스트도 같은 RDS 에 붙는다
+.\gradlew.bat test         # H2·목 객체로 돈다. 실제 DB 테스트는 건너뛴다
 ```
 
-테스트 중 쓰기는 트랜잭션 안에서 실행하고 끝나면 롤백한다. 테스트를 돌려도 RDS 데이터는 바뀌지 않는다.
+실제 DB 에서 강의 SQL 을 확인할 때만 터널을 연 뒤 `LectureRdsRepositoryTest` 를 따로 켠다. 쓰기는 트랜잭션 안에서 실행하고 끝나면 롤백해 DB 데이터는 바뀌지 않는다.
+
+```powershell
+$env:RUN_DB_TESTS = "true"; .\gradlew.bat test --tests "*LectureRdsRepositoryTest"
+```
 
 ## 인증
 
@@ -81,7 +86,7 @@ DB 의 경로 컬럼(`video`, `material`, `preview`, `assignments.work`)은 `app
 
 | 파일 | 내용 |
 |---|---|
-| `LectureRdsRepositoryTest` | 강의 SQL 을 RDS 에서 실행. 읽기와 쓰기(롤백) |
-| `global/auth/JwtAccessTokenVerifierTest` | DB 토큰 대조·제한 계정. RDS, 롤백 |
+| `LectureRdsRepositoryTest` | 강의 SQL 을 실제 DB 에서 실행. 읽기와 쓰기(롤백). `RUN_DB_TESTS=true` 일 때만 |
+| `global/auth/JwtAccessTokenVerifierTest` | 토큰 서명·만료 검증. DB 는 보지 않는다(`.env` 의 `JWT_SECRET` 사용) |
 | `Lecture*ControllerTest`, `Lecture*WriteTest`, `LectureServiceTest`, `LecturePreviewTest`, `LectureFileStorageTest` | HTTP 계약·서비스 분기. 저장소는 목 객체 |
-| `LectureApplicationTest`, `SesacEduApplicationTests` | 실제 스프링 설정 로딩(RDS 연결) |
+| `LectureApplicationTest`, `SesacEduApplicationTests` | 실제 스프링 설정 로딩. `LectureApplicationTest` 는 `.env` 를 읽고 강의 저장소만 목 객체, `SesacEduApplicationTests` 는 test 프로필(H2) |
