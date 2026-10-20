@@ -26,7 +26,7 @@ public class SwaggerConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("SesacEdu API")
-                        .description("세싹에듀 백엔드 API 문서")
+                        .description("새싹에듀 백엔드 API 문서")
                         .version("v1"))
                 .components(new Components()
                         .addSecuritySchemes(BEARER_AUTH, new SecurityScheme()

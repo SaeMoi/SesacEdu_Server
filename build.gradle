@@ -11,11 +11,6 @@ description = 'SesacEdu'
 
 sourceCompatibility = '11'
 
-// 소스에 한글 주석이 있어 인코딩을 고정한다. 빌드 환경 기본값이 UTF-8 이 아니면 깨진다.
-tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-}
-
 repositories {
     mavenCentral()
 }
@@ -25,22 +20,38 @@ dependencies {
     providedRuntime 'org.springframework.boot:spring-boot-starter-tomcat'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    implementation 'me.paulschwarz:spring-dotenv:4.0.0'
 
     // Swagger (Boot 2.7 용)
     implementation 'org.springdoc:springdoc-openapi-ui:1.7.0'
 
-    // ↓ 추가: JDBC(JdbcTemplate) + Oracle 드라이버
-    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
-    implementation 'org.springframework.boot:spring-boot-starter-mail'
-    runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
-
-    // JWT (JwtUtil)
+    // JWT
     implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
+
+    // JDBC + Oracle
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
+
+    testRuntimeOnly 'com.h2database:h2'
+    implementation 'org.springframework.boot:spring-boot-starter-mail'
+
+    // 커뮤니티(/forum) 게시글 HTML 정리·요약
+    implementation 'org.jsoup:jsoup:1.17.2'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+}
+
+// 빌드 결과물을 별도 폴더에 저장합니다.
+if (System.getProperty('os.name').toLowerCase().contains('windows')) {
+    buildDir = file("C:/gradle-build/sesacedu")
+} else {
+    buildDir = file("${System.getProperty('user.home')}/gradle-build/sesacedu")
+}
+
+// Java 소스를 UTF-8로 컴파일합니다.
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
 }

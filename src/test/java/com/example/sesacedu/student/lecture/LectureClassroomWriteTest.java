@@ -1,5 +1,6 @@
 package com.example.sesacedu.student.lecture;
 
+import com.example.sesacedu.global.storage.FileStorage;
 import com.example.sesacedu.global.auth.AccessTokenVerifier;
 import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.global.auth.CurrentUserArgumentResolver;
@@ -75,7 +76,7 @@ class LectureClassroomWriteTest {
         return MockMvcBuilders
                 .standaloneSetup(new LectureClassroomController(
                         new LectureClassroomService(lectureRepository, classroomRepository,
-                                new LectureFileStorage(root.toString())),
+                                new LectureFileStorage(root.toString()), mock(FileStorage.class)),
                         new FileResponses()))
                 .setCustomArgumentResolvers(
                         new CurrentUserArgumentResolver(beans.getBeanProvider(AccessTokenVerifier.class)))

@@ -2,6 +2,7 @@ package com.example.sesacedu.student.lecture;
 
 import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.global.exception.ApiException;
+import com.example.sesacedu.global.storage.FileStorage;
 import com.example.sesacedu.student.lecture.dto.AssignmentResponse;
 import com.example.sesacedu.student.lecture.dto.AssignmentSubmitRequest;
 import com.example.sesacedu.student.lecture.dto.CompleteResponse;
@@ -11,9 +12,13 @@ import com.example.sesacedu.student.lecture.dto.MaterialResponse;
 import com.example.sesacedu.student.lecture.dto.PositionSaveRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 수강 화면(영상 · 자료 · 과제 · 이어보기 · 수료) 처리.
@@ -27,13 +32,50 @@ public class LectureClassroomService {
     private final LectureRepository lectureRepository;
     private final LectureClassroomRepository classroomRepository;
     private final LectureFileStorage storage;
+    private final FileStorage fileStorage;
+
+    /** 과제 첨부 허용 확장자와 크기 (10MB) */
+    private static final Set<String> WORK_EXT = Set.of("pdf", "zip", "docx", "hwp", "pptx", "png", "jpg", "jpeg", "txt");
+    private static final long WORK_MAX_BYTES = 10L * 1024 * 1024;
 
     public LectureClassroomService(LectureRepository lectureRepository,
                                    LectureClassroomRepository classroomRepository,
-                                   LectureFileStorage storage) {
+                                   LectureFileStorage storage,
+                                   FileStorage fileStorage) {
         this.lectureRepository = lectureRepository;
         this.classroomRepository = classroomRepository;
         this.storage = storage;
+        this.fileStorage = fileStorage;
+    }
+
+    /**
+     * POST /lectures/{Lid}/assignments/file — 과제 첨부 파일 업로드.
+     * 수강자만. {저장소}/assignment/{Lid}/ 에 저장하고, 제출·수정 API 에 넣을 work·workFilename 을 돌려준다.
+     */
+    public Map<String, String> uploadWork(int lid, CurrentUser currentUser, MultipartFile file) {
+        Enrolled enrolled = requireEnrolled(lid, currentUser);
+        if (enrolled.lecture.getAssignmentTitle() == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "ASSIGNMENT_NOT_FOUND", "등록된 과제가 없습니다.");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "첨부할 파일을 선택해 주세요.");
+        }
+        if (file.getSize() > WORK_MAX_BYTES) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "과제 파일은 10MB까지 올릴 수 있습니다.");
+        }
+        String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
+        int dot = original.lastIndexOf('.');
+        String ext = dot < 0 ? "" : original.substring(dot + 1).toLowerCase(Locale.ROOT);
+        if (!WORK_EXT.contains(ext)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_FILE_TYPE",
+                    "과제 파일은 " + String.join(", ", WORK_EXT) + " 형식만 올릴 수 있습니다.");
+        }
+        String work = fileStorage.store(file, "assignment/" + lid);
+        Map<String, String> result = new LinkedHashMap<>();
+        result.put("work", work);
+        String stored = work.substring(work.lastIndexOf('/') + 1);
+        result.put("workFilename", stored.substring(stored.indexOf('_') + 1));   // 앞의 UUID_ 를 뗀 원본 이름
+        return result;
     }
 
     /** GET /lectures/{Lid}/learn — 영상 재생 화면. */

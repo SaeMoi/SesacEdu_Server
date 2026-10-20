@@ -1,6 +1,6 @@
 package com.example.sesacedu.global.auth;
 
-import com.example.sesacedu.global.config.JwtUtil;
+import com.example.sesacedu.global.JwtUtil;
 import com.example.sesacedu.global.exception.ApiException;
 import io.jsonwebtoken.Claims;
 import org.springframework.http.HttpStatus;

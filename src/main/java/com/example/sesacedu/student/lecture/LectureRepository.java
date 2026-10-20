@@ -1,5 +1,6 @@
 package com.example.sesacedu.student.lecture;
 
+import com.example.sesacedu.global.storage.LectureThumbnail;
 import com.example.sesacedu.student.lecture.EnrollmentProgress;
 import com.example.sesacedu.student.lecture.LectureCard;
 import com.example.sesacedu.student.lecture.LectureDetail;
@@ -28,7 +29,7 @@ public class LectureRepository {
             rs.getInt("lid"),
             rs.getString("name"),
             rs.getString("headline"),
-            rs.getString("picture"),
+            LectureThumbnail.urlOf(rs.getString("picture")),
             rs.getString("instructor"),
             rs.getString("category"),
             rs.getString("level_value"),
@@ -148,7 +149,7 @@ public class LectureRepository {
                 rs.getString("summary"),
                 rs.getString("category"),
                 rs.getString("level_value"),
-                rs.getString("picture"),
+                LectureThumbnail.urlOf(rs.getString("picture")),
                 rs.getString("preview"),
                 rs.getInt("price"),
                 rs.getString("iname"),

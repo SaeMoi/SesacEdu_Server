@@ -125,6 +125,18 @@ public class LectureClassroomController {
         return classroomService.submit(lid, currentUser, request);
     }
 
+    @Operation(summary = "과제 파일 업로드",
+            description = "수강자만 올릴 수 있다. multipart/form-data 의 file 하나 (10MB, pdf/zip/docx/hwp/pptx/png/jpg/txt). "
+                    + "응답의 work·workFilename 을 과제 제출·수정 요청에 그대로 넣는다.")
+    @PostMapping(value = "/assignments/file", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public java.util.Map<String, String> uploadWork(@PathVariable("lid") int lid,
+                                                    @RequestParam(value = "file", required = false)
+                                                    org.springframework.web.multipart.MultipartFile file,
+                                                    @Parameter(hidden = true) CurrentUser currentUser) {
+        return classroomService.uploadWork(lid, currentUser, file);
+    }
+
     @Operation(summary = "과제 상세 확인",
             description = "제출물 한 건을 번호로 본다.")
     @GetMapping("/assignments/{aid}")

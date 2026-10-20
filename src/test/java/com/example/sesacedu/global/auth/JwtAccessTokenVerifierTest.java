@@ -1,6 +1,6 @@
 package com.example.sesacedu.global.auth;
 
-import com.example.sesacedu.global.config.JwtUtil;
+import com.example.sesacedu.global.JwtUtil;
 import com.example.sesacedu.global.exception.ApiException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

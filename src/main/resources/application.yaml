@@ -2,15 +2,44 @@ spring:
   application:
     name: SesacEdu
   datasource:
-    driver-class-name: oracle.jdbc.OracleDriver
     url: ${DB_URL}
-    username: ${DB_USER}
+    username: ${DB_USERNAME:${DB_USER}}
     password: ${DB_PASSWORD}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+      connection-timeout: 10000      # 풀에서 연결을 기다리는 최대 시간 (ms)
+      validation-timeout: 5000
+      idle-timeout: 300000           # 5분 놀면 반납
+      max-lifetime: 1500000          # 25분마다 새 연결 (NAT/방화벽 유휴 끊김보다 짧게)
+      keepalive-time: 120000         # 2분마다 유휴 연결 확인
+      data-source-properties:
+        oracle.net.CONNECT_TIMEOUT: 10000   # TCP 연결 시도 제한 (ms)
+        oracle.jdbc.ReadTimeout: 60000      # 응답 없는 쿼리 소켓 제한 (ms)
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 20MB
-
+      max-file-size: 200MB            # 강사 강의 영상/자료 업로드
+      max-request-size: 200MB
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
+      mail.smtp.starttls.required: true
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
 springdoc:
   swagger-ui:
     path: /swagger
+app:
+  mail:
+    from: ${MAIL_USERNAME:sesacedu@example.test}
+  # 브라우저에서 이 API를 부를 수 있는 프런트 주소 (쉼표로 여러 개). 비어 있으면 교차 출처 호출 전부 차단.
+  # JWT_SECRET 은 JwtUtil 이 ${JWT_SECRET} 로 직접 읽는다 (기본값 없음).
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:}
