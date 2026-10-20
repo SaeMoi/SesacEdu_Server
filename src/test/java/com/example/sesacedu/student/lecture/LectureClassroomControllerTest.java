@@ -1,5 +1,6 @@
 package com.example.sesacedu.student.lecture;
 
+import com.example.sesacedu.global.storage.FileStorage;
 import com.example.sesacedu.global.auth.AccessTokenVerifier;
 import com.example.sesacedu.global.auth.CurrentUser;
 import com.example.sesacedu.global.auth.CurrentUserArgumentResolver;
@@ -49,7 +50,7 @@ class LectureClassroomControllerTest {
         return MockMvcBuilders
                 .standaloneSetup(new LectureClassroomController(
                         new LectureClassroomService(lectureRepository, classroomRepository,
-                                new LectureFileStorage("./storage")),
+                                new LectureFileStorage("./storage"), mock(FileStorage.class)),
                         new FileResponses()))
                 .setCustomArgumentResolvers(
                         new CurrentUserArgumentResolver(beans.getBeanProvider(AccessTokenVerifier.class)))
@@ -75,13 +76,12 @@ class LectureClassroomControllerTest {
     }
 
     @Test
-    void 로그인했지만_수강중이_아니면_403이다() throws Exception {
+    void 로그인만_하면_수강중이_아니어도_수강화면이_열린다() throws Exception {
         when(classroomRepository.findForEnrolled(1)).thenReturn(Optional.of(lectureOne()));
         when(lectureRepository.findEnrollment(12, 1)).thenReturn(Optional.empty());
 
         mvcAs(12).perform(get("/lectures/1/learn").header("Authorization", TOKEN))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_ENROLLED"));
+                .andExpect(status().isOk());
     }
 
     @Test

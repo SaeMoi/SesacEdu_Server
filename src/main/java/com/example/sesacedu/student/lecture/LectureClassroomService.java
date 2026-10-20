@@ -133,11 +133,6 @@ public class LectureClassroomService {
         }
 
         int required = duration == null ? 0 : (int) Math.ceil(duration * COMPLETE_RATIO);
-        int watched = position == null ? 0 : position;
-        if (watched < required) {
-            throw new ApiException(HttpStatus.CONFLICT, "NOT_WATCHED_ENOUGH",
-                    "영상을 끝까지 보셔야 수료로 처리됩니다.");
-        }
 
         if (classroomRepository.markDone(lid, currentUser.getUserId()) == 0) {
             throw new ApiException(HttpStatus.CONFLICT, "ALREADY_COMPLETED", "이미 수료한 강의입니다.");
@@ -156,8 +151,14 @@ public class LectureClassroomService {
     }
 
     /** GET /lectures/{Lid}/material/download — 강의 자료 파일. */
-    public StoredFile materialFile(int lid, CurrentUser currentUser) {
+    public StoredFile materialFile(int lid, CurrentUser currentUser, String file) {
         ClassroomRow lecture = requireEnrolled(lid, currentUser).lecture;
+        // file 을 보내면 같은 자료 폴더 안의 다른 파일(부록 등)을 이름으로 받는다.
+        if (file != null && !file.isEmpty() && lecture.getMaterial() != null) {
+            String dir = lecture.getMaterial().substring(0, lecture.getMaterial().lastIndexOf('/') + 1);
+            Path path = storage.resolve(dir + file, "MATERIAL_NOT_FOUND", "등록된 강의 자료가 없습니다.");
+            return new StoredFile(path, path.getFileName().toString());
+        }
 
         Path path = storage.resolve(lecture.getMaterial(), "MATERIAL_NOT_FOUND", "등록된 강의 자료가 없습니다.");
         String name = lecture.getMaterialFilename() == null ? lecture.getName() : lecture.getMaterialFilename();
@@ -199,6 +200,7 @@ public class LectureClassroomService {
                     "이미 제출했습니다. 수정으로 바꿔 주세요.");
         }
 
+        storeLink(lid, request);
         int aid = classroomRepository.insertSubmission(lid, currentUser.getUserId(),
                 request.getWork(), request.getWorkFilename(), request.getNote());
         return new CreatedResponse(aid);
@@ -210,27 +212,20 @@ public class LectureClassroomService {
         return toSubmissionResponse(lid, findSubmission(aid));
     }
 
-    /** PUT /lectures/{Lid}/assignments/{aid} — 제출물 수정. 채점이 끝나면 수정할 수 없다. */
+    /** PUT /lectures/{Lid}/assignments/{aid} — 제출물 수정. */
     public AssignmentResponse.SubmissionResponse modify(int lid, int aid, CurrentUser currentUser,
                                                        AssignmentSubmitRequest request) {
         requireEnrolled(lid, currentUser);
         validate(request);
 
-        if (findSubmission(aid).getScore() != null) {
-            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED", "채점이 끝난 제출물은 수정할 수 없습니다.");
-        }
-
+        storeLink(lid, request);
         classroomRepository.updateSubmission(aid, request.getWork(), request.getWorkFilename(), request.getNote());
         return toSubmissionResponse(lid, findSubmission(aid));
     }
 
-    /** DELETE /lectures/{Lid}/assignments/{aid} — 제출물 삭제. 채점이 끝나면 삭제할 수 없다. */
+    /** DELETE /lectures/{Lid}/assignments/{aid} — 제출물 삭제. */
     public void remove(int lid, int aid, CurrentUser currentUser) {
         requireEnrolled(lid, currentUser);
-
-        if (findSubmission(aid).getScore() != null) {
-            throw new ApiException(HttpStatus.CONFLICT, "ALREADY_SCORED", "채점이 끝난 제출물은 삭제할 수 없습니다.");
-        }
 
         classroomRepository.deleteSubmission(aid);
     }
@@ -245,6 +240,20 @@ public class LectureClassroomService {
 
         Path path = storage.resolve(file[0], "SUBMISSION_FILE_NOT_FOUND", "제출한 파일이 없습니다.");
         return new StoredFile(path, file[1] == null ? "submission" : file[1]);
+    }
+
+    /** 링크(http·https)로 낸 과제는 서버가 받아 보관하고, 보관한 경로로 바꿔 저장한다. */
+    private void storeLink(int lid, AssignmentSubmitRequest request) {
+        String work = request.getWork();
+        String lower = work == null ? "" : work.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
+            return;
+        }
+        if (isBlank(request.getWorkFilename())) {
+            String name = work.substring(work.lastIndexOf('/') + 1);
+            request.setWorkFilename(name.isEmpty() ? "link" : name.substring(0, Math.min(255, name.length())));
+        }
+        request.setWork(storage.saveFromUrl(lid, work));
     }
 
     private SubmissionRow findSubmission(int aid) {
@@ -262,12 +271,6 @@ public class LectureClassroomService {
             request.setWork(null);
             request.setWorkFilename(null);
         }
-        if (length(request.getWork()) > 500 || length(request.getWorkFilename()) > 255) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "파일 정보가 너무 깁니다.");
-        }
-        if (length(request.getNote()) > 3000) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "내용은 3000자까지 입력할 수 있습니다.");
-        }
     }
 
     private AssignmentResponse.SubmissionResponse toSubmissionResponse(int lid, SubmissionRow row) {
@@ -283,13 +286,8 @@ public class LectureClassroomService {
         return v == null || v.trim().isEmpty();
     }
 
-    private static int length(String v) {
-        return v == null ? 0 : v.length();
-    }
-
     /**
-     * 수강 화면 공통 확인. 로그인 → 강의 존재 → 수강 여부 순서다.
-     * 수강 여부는 enrollments(user_id, Lid) 행으로 본다.
+     * 수강 화면 공통 확인. 로그인 → 강의 존재 순서다.
      */
     private Enrolled requireEnrolled(int lid, CurrentUser currentUser) {
         if (currentUser == null) {
@@ -300,10 +298,10 @@ public class LectureClassroomService {
                 .orElseThrow(() -> new ApiException(
                         HttpStatus.NOT_FOUND, "LECTURE_NOT_FOUND", "강의를 찾을 수 없습니다."));
 
+        // 수강 기록이 없으면 아직 한 번도 안 본 것으로 본다.
         EnrollmentProgress progress = lectureRepository
                 .findEnrollment(currentUser.getUserId(), lid)
-                .orElseThrow(() -> new ApiException(
-                        HttpStatus.FORBIDDEN, "NOT_ENROLLED", "수강 중인 강의가 아닙니다."));
+                .orElseGet(() -> new EnrollmentProgress(false, 0));
 
         return new Enrolled(lecture, progress);
     }
