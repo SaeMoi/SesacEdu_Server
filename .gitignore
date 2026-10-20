@@ -5,6 +5,7 @@ build/
 !**/src/main/**/build/
 !**/src/test/**/build/
 .DS_Store
+.env
 
 ### STS ###
 .apt_generated
@@ -36,3 +37,19 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Cursor ###
+.cursor/
+
+# 접속 정보. 커밋하지 않는다
+.env.rds
+
+
+# 가상PG 승인 기록(CSV). 로컬 테스트 데이터라 커밋하지 않는다
+vpg/
+
+# 업로드한 강의 파일(썸네일·영상·자료)
+/storage/
+
+# old instructor repo copy (separate git, has its own .env)
+/SesacEdu_Server(instructor)/

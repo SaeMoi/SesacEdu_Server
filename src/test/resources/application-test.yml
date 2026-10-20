@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:sesacedu;MODE=Oracle;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000
+    username: sa
+    password: ''
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-test.sql
+  mail:
+    host: localhost
+    port: 1025
+    username: test@example.test
+    password: ''
+app:
+  security:
+    jwt:
+      secret: test-only-jwt-key-at-least-32-bytes-long
+      ttl-seconds: 3600
+      reissue-max: 2
+      reissue-grace-seconds: 86400
+  mail:
+    from: test@example.test
