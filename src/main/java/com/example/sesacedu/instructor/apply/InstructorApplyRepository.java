@@ -51,11 +51,21 @@ public class InstructorApplyRepository {
      */
     public void insertApplication(long userId, String iname, String bio, String field,
                                   String careerFile, String fileName) {
-        jdbcTemplate.update(
-                "INSERT INTO instructors " +
-                        "(user_id, iname, bio, field, career_file, career_filename, applied_at, approved_at) " +
-                        "VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP, NULL)",
-                userId, iname, bio, field, careerFile, fileName);
+        int updated = jdbcTemplate.update(
+                "UPDATE instructors SET iname = ?, bio = ?, field = ?, " +
+                        "       career_file = ?, career_filename = ?, " +
+                        "       applied_at = SYSTIMESTAMP, approved_at = NULL, rejected_at = NULL, " +
+                        "       reject_reason = NULL, updated = SYSTIMESTAMP " +
+                        "WHERE user_id = ?",
+                iname, bio, field, careerFile, fileName, userId);
+
+        if (updated == 0) {   // 기존 신청 행이 없을 때만 새로 넣는다
+            jdbcTemplate.update(
+                    "INSERT INTO instructors " +
+                            "(user_id, iname, bio, field, career_file, career_filename, applied_at, approved_at, rejected_at) " +
+                            "VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP, NULL, NULL)",
+                    userId, iname, bio, field, careerFile, fileName);
+        }
     }
 
     /** 사용자의 auth 를 바꾼다. (신청 시 4=신청 대기로) */
