@@ -26,7 +26,7 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * 처리 순서: 1. JWT 검증 + DB 회원 확인 (401 UNAUTHORIZED / TOKEN_EXPIRED, restricted 403 ACCOUNT_RESTRICTED)
  * → 2. 입력 검증 (title 1~200자, content 1~4000자, 앞뒤 공백 제거. 아니면 400 INVALID_INPUT)
  * → 3. INSERT inquiries(user_id, title, content) → 4. 201 CST_QNA_CREATED + Location, result = 상세와 같은 모양.
- * 작성자는 토큰 sub로만 정한다. answer·answered_by 등은 요청에서 받지 않는다 (DTO에 필드 없음).
+ * 작성자는 토큰 sub로만 정한다. answer·answered_by 등은 요청에서 받지 않는다.
  */
 @RestController
 public class cstqna_posts {
