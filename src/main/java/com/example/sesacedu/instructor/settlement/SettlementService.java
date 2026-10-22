@@ -22,7 +22,7 @@ import java.util.regex.Pattern;
 /**
  * 강사 정산 로직.
  *   매출은 결제 완료 주문에서 바로 계산한다. settlements 행은 관리자가 확정한 달의 상태·계좌만 준다.
- *   정산 주기: 전월 21일 00:00 ~ 당월 21일 00:00(미포함) → period = 당월
+ *   정산 주기: 매월 1일 00:00 ~ 말일 23:59:59 → period = 결제가 속한 그 달 (캘린더 월 기준)
  *   아직 settlements 행이 없는데 매출이 있는 달은 status = "pending"(정산 대기)으로 목록에 넣는다.
  * 권한: 본인(user_id) 정산만 조회된다.
  */
@@ -31,7 +31,6 @@ public class SettlementService {
 
     private static final int PAGE_SIZE = 5;            // 페이지당 고정
     private static final double DEDUCTION_RATE = 0.20; // 플랫폼 수수료 20% (목업 기준 — 정책 확정 시 변경)
-    private static final int CYCLE_START_DAY = 21;
     private static final String STATUS_PENDING = "pending";
     private static final Pattern PERIOD = Pattern.compile("^(\\d{4})[.\\-/]?(\\d{1,2})$");
     private static final DateTimeFormatter PERIOD_OUT = DateTimeFormatter.ofPattern("yyyy.MM");
@@ -52,10 +51,9 @@ public class SettlementService {
         return YearMonth.of(Integer.parseInt(m.group(1)), month);
     }
 
-    /** 결제 시각이 속한 정산 월. 21일부터는 다음 달 정산이다. */
+    /** 결제 시각이 속한 정산 월. 매월 1일~말일(캘린더 월) 기준 → 결제한 달 그대로. */
     static YearMonth cycleOf(LocalDateTime paidAt) {
-        YearMonth ym = YearMonth.from(paidAt);
-        return paidAt.getDayOfMonth() >= CYCLE_START_DAY ? ym.plusMonths(1) : ym;
+        return YearMonth.from(paidAt);
     }
 
     private static long deductionOf(long revenue) {
