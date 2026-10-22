@@ -20,7 +20,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 강사 정산 로직.
+ * 강사 정산 로직
  *   매출은 결제 완료 주문에서 바로 계산한다. settlements 행은 관리자가 확정한 달의 상태·계좌만 준다.
  *   정산 주기: 매월 1일 00:00 ~ 말일 23:59:59 → period = 결제가 속한 그 달 (캘린더 월 기준)
  *   아직 settlements 행이 없는데 매출이 있는 달은 status = "pending"(정산 대기)으로 목록에 넣는다.
