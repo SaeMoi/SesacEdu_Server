@@ -7,12 +7,11 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * 강사 정산 JDBC. (확정 DDL 기준)
- *   정산 행 : settlements (user_id = 강사). 관리자가 확정한 월만 있다.
- *   매출   : order_items + orders + lectures 에서 직접 계산 (status='paid' 주문만, 환불·취소 제외)
- *     - 강사가 발행한 강의 쿠폰(coupons.Lid = 그 강의)의 할인만 그 강의 매출에서 뺀다.
- *     - 관리자가 발행한 전체 쿠폰(coupons.Lid IS NULL)과 포인트는 플랫폼이 부담하므로 강사 매출을 줄이지 않는다 (Kim 2026-10-20).
+/*
+ * ===================== [취약 진단용 - settlement] JWT 인증은 원본 유지 =====================
+ *  (V-AUTHZ/A01) findSettlement 의 'AND user_id = ?' 삭제 → 아무 sid 의 정산(매출/계좌) 열람(IDOR)
+ *  (V-SQLI/A03)  sid/user_id 조건 바인딩 제거(문자열 연결)
+ * ====================================================================================
  */
 @Repository
 public class SettlementRepository {
@@ -53,26 +52,26 @@ public class SettlementRepository {
     }
 
     public List<SettlementRow> findSettlements(long instructorUserId) {
-        return jdbcTemplate.query(ROW_COLUMNS + "WHERE user_id = ?",
-                (rs, n) -> mapRow(rs), instructorUserId);
+        // [V-SQLI] user_id 바인딩 제거
+        return jdbcTemplate.query(ROW_COLUMNS + "WHERE user_id = " + instructorUserId,
+                (rs, n) -> mapRow(rs));
     }
 
+    /** [V-AUTHZ] 'AND user_id = ?' 제거 → 아무 sid 의 정산이나 조회(IDOR). [V-SQLI] sid 연결. */
     public SettlementRow findSettlement(int sid, long instructorUserId) {
         try {
-            return jdbcTemplate.queryForObject(ROW_COLUMNS + "WHERE sid = ? AND user_id = ?",
-                    (rs, n) -> mapRow(rs), sid, instructorUserId);
+            return jdbcTemplate.queryForObject(ROW_COLUMNS + "WHERE sid = " + sid,
+                    (rs, n) -> mapRow(rs));
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    /** 정산 행이 아직 없는 달은 강사 정보의 계좌를 보여 준다. [bank, account] */
     public String[] findInstructorAccount(long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT bank, account FROM instructors WHERE user_id = ?",
-                    (rs, n) -> new String[]{ rs.getString("bank"), rs.getString("account") },
-                    instructorUserId);
+                    "SELECT bank, account FROM instructors WHERE user_id = " + instructorUserId,
+                    (rs, n) -> new String[]{ rs.getString("bank"), rs.getString("account") });
         } catch (EmptyResultDataAccessException e) {
             return new String[]{ null, null };
         }
@@ -83,7 +82,7 @@ public class SettlementRepository {
         public final long lid;
         public final String lectureName;
         public final LocalDateTime paidAt;
-        public final long net;   // 쿠폰 할인을 뺀 금액
+        public final long net;
         public PaidItem(long lid, String lectureName, LocalDateTime paidAt, long net) {
             this.lid = lid;
             this.lectureName = lectureName;
@@ -93,9 +92,9 @@ public class SettlementRepository {
     }
 
     public List<PaidItem> findPaidItems(long instructorUserId) {
+        // [V-SQLI] user_id 바인딩 제거
         return jdbcTemplate.query(
                 "SELECT x.Lid, l.name AS lecture_name, x.paid_at, " +
-                        // 강사 쿠폰(그 강의 전용)만 빼고, 전체 쿠폰(cpn_lid NULL)은 빼지 않는다
                         "       GREATEST(x.price - CASE WHEN x.cpn_lid = x.Lid THEN x.discount ELSE 0 END, 0) AS net " +
                         "FROM (SELECT oi.Lid, oi.price, o.paid_at, o.discount, c.Lid AS cpn_lid " +
                         "        FROM order_items oi " +
@@ -103,12 +102,11 @@ public class SettlementRepository {
                         "        LEFT JOIN coupons c ON c.cid = o.cid " +
                         "       WHERE o.status = 'paid' AND o.paid_at IS NOT NULL) x " +
                         "JOIN lectures l ON l.Lid = x.Lid " +
-                        "WHERE l.user_id = ?",
+                        "WHERE l.user_id = " + instructorUserId,
                 (rs, n) -> new PaidItem(
                         rs.getLong("Lid"),
                         rs.getString("lecture_name"),
                         rs.getTimestamp("paid_at").toLocalDateTime(),
-                        rs.getLong("net")),
-                instructorUserId);
+                        rs.getLong("net")));
     }
 }

@@ -9,12 +9,12 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
-/**
- * 강사 Q&A JDBC. (확정 DDL 기준)
- *   qna q (강의 문의)
- *   - JOIN lectures l ON q.lid = l.lid           (강의명, 담당강사 확인)
- *   - JOIN users u    ON q.user_id = u.user_id   (질문자 닉네임)
- * 담당 강사 범위: l.user_id = ? (JWT 의 강사). 답변완료 여부: q.answer NULL 여부.
+/*
+ * ===================== [취약 진단용 - qna] =====================
+ *  (V-AUTHZ/A01) findDetail 의 'AND l.user_id = ?' 삭제 → IDOR(비밀글 isSecret 노출)
+ *  (V-SQLI/A03)  saveAnswer 의 answer 문자열 연결(저장형 SQLi), 숫자 조건 바인딩 제거
+ *  (V-XSS/A03)   answer 미살균 저장 → 조회 시 그대로 반환되어 저장형 XSS
+ * ================================================================
  */
 @Repository
 public class QnaRepository {
@@ -25,7 +25,6 @@ public class QnaRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // status 필터는 리터럴 조건 (바인드 인자 없음). none = 미답변, done = 답변완료
     private static void appendStatusFilter(StringBuilder sql, String status) {
         if ("none".equals(status))      sql.append("AND q.answer IS NULL ");
         else if ("done".equals(status)) sql.append("AND q.answer IS NOT NULL ");
@@ -43,24 +42,25 @@ public class QnaRepository {
             );
 
     public List<QnaListItem> findQna(long instructorUserId, String status, int offset, int size) {
+        // [V-SQLI] 숫자 조건 바인딩 제거
         StringBuilder sql = new StringBuilder(
                 "SELECT q.qid, l.name AS lecture_name, q.title, q.created, " +
                         "       CASE WHEN q.answer IS NULL THEN 0 ELSE 1 END AS answered " +
                         "FROM qna q " +
                         "JOIN lectures l ON q.lid = l.lid " +
-                        "WHERE l.user_id = ? ");
+                        "WHERE l.user_id = " + instructorUserId + " ");
         appendStatusFilter(sql, status);
-        sql.append("ORDER BY q.created DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
-        return jdbcTemplate.query(sql.toString(), ITEM_MAPPER, instructorUserId, offset, size);
+        sql.append("ORDER BY q.created DESC OFFSET " + offset + " ROWS FETCH NEXT " + size + " ROWS ONLY");
+        return jdbcTemplate.query(sql.toString(), ITEM_MAPPER);
     }
 
     public int countQna(long instructorUserId, String status) {
         StringBuilder sql = new StringBuilder(
                 "SELECT COUNT(*) FROM qna q " +
                         "JOIN lectures l ON q.lid = l.lid " +
-                        "WHERE l.user_id = ? ");
+                        "WHERE l.user_id = " + instructorUserId + " ");
         appendStatusFilter(sql, status);
-        Integer cnt = jdbcTemplate.queryForObject(sql.toString(), Integer.class, instructorUserId);
+        Integer cnt = jdbcTemplate.queryForObject(sql.toString(), Integer.class);
         return cnt == null ? 0 : cnt;
     }
 
@@ -80,7 +80,7 @@ public class QnaRepository {
         return d;
     };
 
-    /** 상세 1건. 담당 강사의 강의에 속한 것만. 없거나 권한 없으면 null */
+    /** [V-AUTHZ] 'AND l.user_id = ?' 제거 → 아무 질문이나 조회(IDOR, 비밀글 포함). [V-SQLI] qid 연결. */
     public QnaDetail findDetail(int qid, long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
@@ -89,37 +89,30 @@ public class QnaRepository {
                             "FROM qna q " +
                             "JOIN lectures l ON q.lid = l.lid " +
                             "JOIN users u    ON q.user_id = u.user_id " +
-                            "WHERE q.qid = ? AND l.user_id = ?",
-                    DETAIL_MAPPER, qid, instructorUserId);
+                            "WHERE q.qid = " + qid,
+                    DETAIL_MAPPER);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    // ---------------- 권한 확인 ----------------
-    /** 이 질문(qid)이 해당 강사의 담당 강의에 속하는지. 없거나 남의 강의면 false */
+    // ---------------- 권한 확인(미사용) ----------------
     public boolean isOwnedByInstructor(int qid, long instructorUserId) {
-        Integer cnt = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM qna q JOIN lectures l ON q.lid = l.lid " +
-                        "WHERE q.qid = ? AND l.user_id = ?",
-                Integer.class, qid, instructorUserId);
-        return cnt != null && cnt > 0;
+        return true;   // [V-AUTHZ] 항상 통과
     }
 
     // ---------------- 답변 저장 / 삭제 ----------------
-    /** 답변 저장(작성·수정 공통). answered_by = 답변 강사, answered_at·updated 자동 기록. */
+    /** [V-SQLI/V-XSS] answer 문자열을 작은따옴표로 감싸 연결 → 저장형 SQLi/XSS. qid/answeredBy 바인딩 제거. */
     public void saveAnswer(int qid, long answeredBy, String answer) {
+        String answerSql = (answer == null) ? "NULL" : "'" + answer + "'";
         jdbcTemplate.update(
-                "UPDATE qna SET answer = ?, answered_by = ?, " +
-                        "       answered_at = SYSTIMESTAMP, updated = SYSTIMESTAMP WHERE qid = ?",
-                answer, answeredBy, qid);
+                "UPDATE qna SET answer = " + answerSql + ", answered_by = " + answeredBy + ", " +
+                        "       answered_at = SYSTIMESTAMP, updated = SYSTIMESTAMP WHERE qid = " + qid);
     }
 
-    /** 답변 삭제. 질문 행은 두고 answer/answered_by/answered_at 만 비운다. */
     public void clearAnswer(int qid) {
         jdbcTemplate.update(
                 "UPDATE qna SET answer = NULL, answered_by = NULL, " +
-                        "       answered_at = NULL, updated = SYSTIMESTAMP WHERE qid = ?",
-                qid);
+                        "       answered_at = NULL, updated = SYSTIMESTAMP WHERE qid = " + qid);
     }
 }
