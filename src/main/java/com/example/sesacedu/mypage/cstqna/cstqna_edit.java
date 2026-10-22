@@ -18,7 +18,6 @@ import static com.example.sesacedu.global.ApiResponse.*;
 
 /**
  * PUT /mypage/cstqna/{iqid} (Notion API 명세서: 고객센터 1:1 문의 수정).
- *
  * 처리 순서 (한 트랜잭션): 1. JWT 검증 + DB 회원 확인 (401, restricted 403 ACCOUNT_RESTRICTED)
  * → 2. iqid 양의 정수 아니면 400 → 3. 입력 검증 (작성과 같음, 400 INVALID_INPUT)
  * → 4. SELECT ... FOR UPDATE (iqid AND user_id = 나), 없거나 남의 문의면 404 INQUIRY_NOT_FOUND
