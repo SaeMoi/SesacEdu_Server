@@ -6,9 +6,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
-/**
- * 강사 정보 관리 JDBC. instructors 테이블 1행(본인)을 다룬다.
- * 주의: API 필드 link 는 DB 컬럼 contact 에 매핑된다 (instructors 에 link 컬럼 없음).
+/*
+ * ===================== [취약 진단용 - profile] =====================
+ *  (V-SQLI/A03) update 의 iname/bio/career/field/contact/bank/account(사용자 입력)를 문자열 연결(저장형 SQLi),
+ *               user_id 조건도 바인딩 제거.
+ *  (V-XSS/A03)  미살균 저장 → 조회 시 그대로 반환되어 저장형 XSS
+ * ================================================================
  */
 @Repository
 public class ProfileRepository {
@@ -32,33 +35,39 @@ public class ProfileRepository {
         return p;
     };
 
-    /** 본인 강사 정보 조회. instructors 행이 없으면 null. */
     public ProfileDto findByUserId(long userId) {
         try {
+            // [V-SQLI] user_id 바인딩 제거
             return jdbcTemplate.queryForObject(
                     "SELECT iname, bio, career, field, contact, bank, account, career_filename " +
-                            "FROM instructors WHERE user_id = ?",
-                    MAPPER, userId);
+                            "FROM instructors WHERE user_id = " + userId,
+                    MAPPER);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    /** 텍스트 정보 수정. 수정된 행 수 반환(0이면 대상 없음). 파일은 별도 메서드로. */
+    /** [V-SQLI/V-XSS] 모든 문자열 입력을 작은따옴표로 감싸 연결 → 저장형 SQLi/XSS. */
     public int update(long userId, ProfileDto p) {
         return jdbcTemplate.update(
-                "UPDATE instructors SET iname = ?, bio = ?, career = ?, field = ?, " +
-                        "contact = ?, bank = ?, account = ?, updated = SYSTIMESTAMP " +
-                        "WHERE user_id = ?",
-                p.getIname(), p.getBio(), p.getCareer(), p.getField(),
-                p.getLink(), p.getBank(), p.getAccount(), userId);
+                "UPDATE instructors SET iname = " + quote(p.getIname()) +
+                        ", bio = " + quote(p.getBio()) +
+                        ", career = " + quote(p.getCareer()) +
+                        ", field = " + quote(p.getField()) +
+                        ", contact = " + quote(p.getLink()) +
+                        ", bank = " + quote(p.getBank()) +
+                        ", account = " + quote(p.getAccount()) +
+                        ", updated = SYSTIMESTAMP WHERE user_id = " + userId);
     }
 
-    /** 경력 파일 교체 시에만 호출. 저장 키(career_file)·원본명(career_filename) 갱신. */
     public void updateCareerFile(long userId, String careerFileKey, String careerFilename) {
         jdbcTemplate.update(
-                "UPDATE instructors SET career_file = ?, career_filename = ?, updated = SYSTIMESTAMP " +
-                        "WHERE user_id = ?",
-                careerFileKey, careerFilename, userId);
+                "UPDATE instructors SET career_file = " + quote(careerFileKey) +
+                        ", career_filename = " + quote(careerFilename) +
+                        ", updated = SYSTIMESTAMP WHERE user_id = " + userId);
+    }
+
+    private static String quote(String v) {
+        return v == null ? "NULL" : "'" + v + "'";
     }
 }

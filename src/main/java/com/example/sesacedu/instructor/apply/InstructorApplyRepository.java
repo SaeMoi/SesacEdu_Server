@@ -4,10 +4,12 @@ import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/**
- * 강사 신청 기능에서 쓰는 JDBC 접근.
- * 컬럼명은 Oracle 예약어(uid)를 피해 user_id 를 쓴다.
- * user_id 는 JWT 에서 온 값이라 long 으로 받는다(바인딩이라 타입만 맞으면 안전).
+/*
+ * ===================== [취약 진단용 - apply] =====================
+ *  (V-SQLI/A03) 바인딩(?) 제거 → 문자열 연결.
+ *     insertApplication 의 iname/bio(=소개)/field(=분야)/career_filename 이 UPDATE·INSERT 문에 그대로 삽입(저장형 SQLi).
+ *     저장된 값은 응답에서 미살균으로 반환 → 저장형 XSS(A03) 로도 이어짐.
+ * ================================================================
  */
 @Repository
 public class InstructorApplyRepository {
@@ -18,60 +20,47 @@ public class InstructorApplyRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * 사용자의 auth 값을 조회한다.
-     * 0 일반 / 1 수강생 / 2 강사 / 3 관리자 / 4 강사 신청 대기
-     * @return auth 값. 해당 사용자가 없으면 null.
-     */
     public Integer findAuthByUserId(long userId) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT auth FROM users WHERE user_id = ?",
-                    Integer.class,
-                    userId);
+                    "SELECT auth FROM users WHERE user_id = " + userId, Integer.class);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    /** 사용자의 실명(uname)을 조회한다. 없으면 null. */
     public String findUnameByUserId(long userId) {
         try {
             return jdbcTemplate.queryForObject(
-                    "SELECT uname FROM users WHERE user_id = ?",
-                    String.class, userId);
+                    "SELECT uname FROM users WHERE user_id = " + userId, String.class);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
     /**
-     * instructors 에 신청 행을 추가한다.
-     * iname 은 신청 시점엔 실명(uname)으로 채운다. approved_at 은 NULL(대기).
+     * [V-SQLI] 재신청이면 UPDATE, 없으면 INSERT (upsert). 흐름은 원본과 동일하되
+     * 사용자 입력 문자열을 작은따옴표로 감싸 연결한다 → 저장형 SQL Injection.
      */
     public void insertApplication(long userId, String iname, String bio, String field,
                                   String careerFile, String fileName) {
         int updated = jdbcTemplate.update(
-                "UPDATE instructors SET iname = ?, bio = ?, field = ?, " +
-                        "       career_file = ?, career_filename = ?, " +
+                "UPDATE instructors SET iname = '" + iname + "', bio = '" + bio + "', field = '" + field + "', " +
+                        "       career_file = '" + careerFile + "', career_filename = '" + fileName + "', " +
                         "       applied_at = SYSTIMESTAMP, approved_at = NULL, rejected_at = NULL, " +
                         "       reject_reason = NULL, updated = SYSTIMESTAMP " +
-                        "WHERE user_id = ?",
-                iname, bio, field, careerFile, fileName, userId);
+                        "WHERE user_id = " + userId);
 
-        if (updated == 0) {   // 기존 신청 행이 없을 때만 새로 넣는다
+        if (updated == 0) {
             jdbcTemplate.update(
                     "INSERT INTO instructors " +
                             "(user_id, iname, bio, field, career_file, career_filename, applied_at, approved_at, rejected_at) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, SYSTIMESTAMP, NULL, NULL)",
-                    userId, iname, bio, field, careerFile, fileName);
+                            "VALUES (" + userId + ", '" + iname + "', '" + bio + "', '" + field + "', '" +
+                            careerFile + "', '" + fileName + "', SYSTIMESTAMP, NULL, NULL)");
         }
     }
 
-    /** 사용자의 auth 를 바꾼다. (신청 시 4=신청 대기로) */
     public void updateAuth(long userId, int auth) {
-        jdbcTemplate.update(
-                "UPDATE users SET auth = ? WHERE user_id = ?",
-                auth, userId);
+        jdbcTemplate.update("UPDATE users SET auth = " + auth + " WHERE user_id = " + userId);
     }
 }

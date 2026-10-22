@@ -19,6 +19,13 @@ import org.springframework.web.server.ResponseStatusException;
 import javax.servlet.http.HttpServletRequest;
 import java.util.Map;
 
+/*
+ * ===================== [취약 진단용 - feedback] JWT 인증은 원본 유지 =====================
+ *  (V-VALID/A04) 입력검증 제거 : 피드백 필수값 검사 삭제
+ *  (연계) 서비스/리포지토리 소유권 제거 → 다른 강사 과제 열람·다운로드·채점·삭제(IDOR/A01),
+ *         SQLi(A03), 미살균 저장/반환 → XSS(A03)
+ * ====================================================================================
+ */
 @Tag(name = "과제 피드백")
 @RestController
 @RequestMapping("/instructor")
@@ -36,7 +43,7 @@ public class FeedbackController {
     }
 
     // ---------------- 제출 파일 받기 ----------------
-    @Operation(summary = "과제 제출 파일 받기", description = "담당 강의의 제출 파일을 첨부파일로 내려준다.")
+    @Operation(summary = "과제 제출 파일 받기", description = "[취약] 담당강의 검증 없이 제출 파일을 내려준다.")
     @GetMapping("/assignments/{assid}/file")
     public ResponseEntity<org.springframework.core.io.Resource> file(
             @PathVariable("assid") int aid, HttpServletRequest request) {
@@ -49,16 +56,15 @@ public class FeedbackController {
         }
     }
 
-    /** Authorization 헤더의 JWT 에서 강사 user_id 를 꺼낸다 (강사 권한 확인 포함). */
+    /** Authorization 헤더의 JWT 에서 강사 user_id 를 꺼낸다 (강사 권한 확인 포함). JWT 유지. */
     private long instructorId(HttpServletRequest request) {
-        Claims claims = jwtUtil.parse(request);        // 401: 토큰 없음/만료/위조
-        jwtUtil.requireRole(claims, "INSTRUCTOR");     // 403: 강사 아님
+        Claims claims = jwtUtil.parse(request);        // 401
+        jwtUtil.requireRole(claims, "INSTRUCTOR");     // 403
         return jwtUtil.getUid(claims);
     }
 
     // ---------------- 목록 ----------------
-    @Operation(summary = "과제 피드백 목록 조회",
-            description = "로그인한 강사의 담당 강의 전체에서 학생 제출 과제를 최신순으로 조회한다. 페이지당 5개 고정.")
+    @Operation(summary = "과제 피드백 목록 조회", description = "제출 과제를 최신순으로 조회한다. 페이지당 5개 고정.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "401", description = "인증 실패"),
@@ -76,10 +82,10 @@ public class FeedbackController {
     }
 
     // ---------------- 상세 ----------------
-    @Operation(summary = "과제 상세 조회", description = "제출 내용·첨부파일·기존 피드백을 조회한다.")
+    @Operation(summary = "과제 상세 조회", description = "[취약] 담당강의 검증 없이 조회(IDOR).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
-            @ApiResponse(responseCode = "404", description = "과제 없음 또는 권한 없음"),
+            @ApiResponse(responseCode = "404", description = "과제 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
     @GetMapping("/assignments/{assid}")
@@ -93,11 +99,10 @@ public class FeedbackController {
     }
 
     // ---------------- 과제 파일 다운로드 ----------------
-    @Operation(summary = "과제 파일 다운로드",
-            description = "학생이 제출한 과제 파일의 다운로드 URL 을 발급한다. (추후 S3 presigned URL)")
+    @Operation(summary = "과제 파일 다운로드", description = "[취약] 담당강의 검증 없이 다운로드 URL 발급(IDOR).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "다운로드 URL 발급 성공"),
-            @ApiResponse(responseCode = "404", description = "과제 없음/권한 없음/제출 파일 없음"),
+            @ApiResponse(responseCode = "404", description = "과제 없음/제출 파일 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
     @GetMapping("/assignments/{assid}/download")
@@ -113,11 +118,10 @@ public class FeedbackController {
     }
 
     // ---------------- 피드백 저장 (작성·수정 공통) ----------------
-    @Operation(summary = "피드백 저장", description = "점수와 피드백을 저장한다. 작성/수정 구분 없이 덮어쓴다.")
+    @Operation(summary = "피드백 저장", description = "[취약] 입력검증·소유권검증 없이 저장.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "저장 성공"),
-            @ApiResponse(responseCode = "400", description = "필수 정보 누락"),
-            @ApiResponse(responseCode = "404", description = "과제 없음 또는 권한 없음"),
+            @ApiResponse(responseCode = "404", description = "과제 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
     @PutMapping("/assignments/{assid}")
@@ -126,6 +130,7 @@ public class FeedbackController {
             @RequestBody FeedbackSaveRequest req,
             HttpServletRequest request) {
         long uid = instructorId(request);
+        // [필수값 검증 복원] 피드백 내용 필수
         if (req.getFeedback() == null || req.getFeedback().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "피드백 내용이 필요합니다.");
         }
@@ -138,10 +143,10 @@ public class FeedbackController {
     }
 
     // ---------------- 피드백 삭제 ----------------
-    @Operation(summary = "피드백 삭제", description = "피드백/점수만 비운다. 제출물 행은 유지된다.")
+    @Operation(summary = "피드백 삭제", description = "[취약] 소유권검증 없이 삭제.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
-            @ApiResponse(responseCode = "404", description = "과제 없음 또는 권한 없음"),
+            @ApiResponse(responseCode = "404", description = "과제 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
     @DeleteMapping("/assignments/{assid}")

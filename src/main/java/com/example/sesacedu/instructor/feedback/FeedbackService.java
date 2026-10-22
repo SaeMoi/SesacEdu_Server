@@ -11,12 +11,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * 과제 피드백 로직.
- *   - 목록(페이지네이션 + status 필터) / 상세 조회
- *   - 과제 파일 다운로드 (URL 발급)
- *   - 피드백 저장(작성·수정 공통) / 삭제
- * 권한: 해당 과제가 그 강사의 담당 강의에 속해야 한다.
+/*
+ * ===================== [취약 진단용 - feedback] =====================
+ *  (V-AUTHZ/A01) 소유권 검사 제거 : saveFeedback/deleteFeedback 의 isOwnedByInstructor 삭제.
+ *     조회/다운로드도 리포지토리에서 담당강의 조건 제거 → 다른 강사 학생의 제출물 열람·다운로드·채점·삭제(IDOR).
+ * ================================================================
  */
 @Service
 public class FeedbackService {
@@ -47,7 +46,7 @@ public class FeedbackService {
         return new AssignmentPageResponse(safePage, PAGE_SIZE, total, totalPages, items);
     }
 
-    /** 상세. 없거나 권한 없으면 예외. */
+    /** 상세. [V-AUTHZ] 담당강의 검증 없음(IDOR). */
     public AssignmentDetail getDetail(int aid, long instructorUserId) {
         AssignmentDetail detail = feedbackRepository.findDetail(aid, instructorUserId);
         if (detail == null) {
@@ -56,7 +55,7 @@ public class FeedbackService {
         return detail;
     }
 
-    /** 과제 제출 파일 다운로드 정보(원본명 + URL). */
+    /** 과제 제출 파일 다운로드 정보(원본명 + URL). [V-AUTHZ] 담당강의 검증 없음. */
     public AssignmentDownload getDownload(int aid, long instructorUserId) {
         FeedbackRepository.FileInfo info = feedbackRepository.findFileInfo(aid, instructorUserId);
         if (info == null) {
@@ -65,11 +64,10 @@ public class FeedbackService {
         if (info.workPath == null || info.workPath.isBlank()) {
             throw new FileNotFound();
         }
-        // 실제 파일은 GET /instructor/assignments/{aid}/file 이 보낸다 (Authorization 필요)
         return new AssignmentDownload(info.work, "/instructor/assignments/" + aid + "/file");
     }
 
-    /** 과제 제출 파일 자체. 저장소에 파일이 없으면 FileNotFound. */
+    /** 과제 제출 파일 자체. [V-AUTHZ] 담당강의 검증 없음. */
     public StoredFile getFile(int aid, long instructorUserId) {
         FeedbackRepository.FileInfo info = feedbackRepository.findFileInfo(aid, instructorUserId);
         if (info == null) {
@@ -87,23 +85,17 @@ public class FeedbackService {
         }
     }
 
-    /** 피드백 저장 (작성·수정 공통) */
+    /** 피드백 저장. [V-AUTHZ] 소유권 검사 제거 → 아무 과제나 채점 가능. */
     public void saveFeedback(int aid, long instructorUserId, Integer score, String feedback) {
-        if (!feedbackRepository.isOwnedByInstructor(aid, instructorUserId)) {
-            throw new NotFoundOrForbidden();
-        }
         feedbackRepository.saveFeedback(aid, score, feedback);
     }
 
-    /** 피드백 삭제 (score/feedback 를 NULL 로) */
+    /** 피드백 삭제. [V-AUTHZ] 소유권 검사 제거. */
     public void deleteFeedback(int aid, long instructorUserId) {
-        if (!feedbackRepository.isOwnedByInstructor(aid, instructorUserId)) {
-            throw new NotFoundOrForbidden();
-        }
         feedbackRepository.clearFeedback(aid);
     }
 
-    /** 과제가 없거나(=404) 담당 강사가 아님(=권한 없음). 컨트롤러에서 404 로 변환. */
+    /** 과제가 없음(=404). */
     public static class NotFoundOrForbidden extends RuntimeException {
     }
 
