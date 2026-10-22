@@ -15,7 +15,7 @@ import java.util.Map;
 import static com.example.sesacedu.global.ApiResponse.*;
 
 /**
- * 고객센터 1:1 문의(inquiries) 컨트롤러들이 같이 쓰는 헬퍼.
+ * 고객센터 1:1 문의(inquiries) 컨트롤러들이 같이 쓰는 코드
  *
  * - status는 inquiries.answer IS NULL이면 PENDING, 아니면 ANSWERED. editable은 PENDING일 때만 true.
  * - 답변 등록·수정은 관리자 서버(/admin/qna/{iqid}/answer)가 같은 inquiries 행에 한다.

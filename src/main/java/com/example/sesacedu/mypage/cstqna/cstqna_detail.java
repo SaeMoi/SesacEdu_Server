@@ -14,7 +14,7 @@ import java.util.Map;
 import static com.example.sesacedu.global.ApiResponse.*;
 
 /**
- * GET /mypage/cstqna/{iqid} (Notion API 명세서: 고객센터 1:1 문의 상세).
+ * GET /mypage/cstqna/{iqid} (Notion API 명세서: 고객센터 1:1 문의 상세)
  *
  * 처리 순서: 1. JWT 검증 (401 UNAUTHORIZED / TOKEN_EXPIRED)
  * → 2. iqid가 양의 정수가 아니면 400 INVALID_INPUT

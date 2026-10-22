@@ -17,7 +17,7 @@ import java.util.Map;
 import static com.example.sesacedu.global.ApiResponse.*;
 
 /**
- * GET /mypage/cstqna?status=&page=&size= (Notion API 명세서: 고객센터 1:1 문의 목록).
+ * GET /mypage/cstqna?status=&page=&size= (Notion API 명세서: 고객센터 1:1 문의 목록)
  *
  * 처리 순서: 1. Authorization의 JWT 검증 (없음·위조 401 UNAUTHORIZED, 만료 401 TOKEN_EXPIRED)
  * → 2. 쿼리 검증 (status ALL|PENDING|ANSWERED, page 0 이상, size 1~50, 아니면 400 INVALID_INPUT)
