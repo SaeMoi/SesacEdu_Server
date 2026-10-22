@@ -56,7 +56,8 @@ public class cstqna_posts {
         KeyHolder kh = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO inquiries (user_id, title, content) VALUES (?, ?, ?)", new String[]{"IQID"});
+                    "INSERT INTO inquiries (user_id, title, content, created) VALUES (?, ?, ?, SYSTIMESTAMP)",
+                    new String[]{"IQID"});
             ps.setLong(1, userId);
             ps.setString(2, title);
             ps.setString(3, content);
