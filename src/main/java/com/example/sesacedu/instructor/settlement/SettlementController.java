@@ -2,6 +2,7 @@ package com.example.sesacedu.instructor.settlement;
 
 import com.example.sesacedu.global.config.JwtUtil;
 import com.example.sesacedu.instructor.settlement.dto.SettlementDetailResponse;
+import com.example.sesacedu.instructor.settlement.dto.SettlementListItem;
 import com.example.sesacedu.instructor.settlement.dto.SettlementListResponse;
 import io.jsonwebtoken.Claims;
 import io.swagger.v3.oas.annotations.Operation;
@@ -51,6 +52,42 @@ public class SettlementController {
             @RequestParam(value = "page", defaultValue = "1") int page,
             HttpServletRequest request) {
         return ResponseEntity.ok(settlementService.getList(instructorId(request), page));
+    }
+
+    // ---------------- 정산 신청 ----------------
+    @Operation(summary = "정산 신청",
+            description = "로그인한 강사가 끝난 달(매월 1일 00:00 ~ 말일 23:59:59)의 정산을 신청한다. "
+                    + "body { \"period\": \"2026-09\" } (2026.09 도 허용). 금액은 신청 시점의 결제 완료 주문으로 계산해 requested 로 저장한다. "
+                    + "반려된 달은 다시 신청할 수 있다.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "신청 완료"),
+            @ApiResponse(responseCode = "400", description = "기간 형식 오류 / 아직 끝나지 않은 달 / 매출 없는 달"),
+            @ApiResponse(responseCode = "401", description = "인증 실패"),
+            @ApiResponse(responseCode = "403", description = "권한 없음"),
+            @ApiResponse(responseCode = "409", description = "이미 신청·승인·지급된 달"),
+            @ApiResponse(responseCode = "500", description = "서버 에러")
+    })
+    @PostMapping("/settlement")
+    public ResponseEntity<SettlementListItem> request(
+            @RequestBody(required = false) SettlementRequest body,
+            HttpServletRequest request) {
+        long userId = instructorId(request);
+        try {
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .body(settlementService.request(userId, body == null ? null : body.getPeriod()));
+        } catch (SettlementService.InvalidRequest e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (SettlementService.AlreadyRequested e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 신청된 정산입니다.");
+        }
+    }
+
+    /** 정산 신청 요청 본문 { period } */
+    public static class SettlementRequest {
+        private String period;   // "2026-09" (또는 "2026.09")
+
+        public String getPeriod() { return period; }
+        public void setPeriod(String period) { this.period = period; }
     }
 
     // ---------------- 상세 ----------------
