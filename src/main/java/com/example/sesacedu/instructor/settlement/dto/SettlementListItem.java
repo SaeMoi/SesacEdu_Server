@@ -7,6 +7,7 @@ public class SettlementListItem {
     private String period;   // "2026.10"
     private long amount;     // 정산 금액 (net)
     private String status;   // pending(정산 대기) / requested / approved / paid / rejected
+    private boolean requestable; // 정산 신청 버튼 표시 여부: 지난 달 + 매출 있음 + 신청 전(pending) 또는 반려(rejected)
 
     public SettlementListItem() {
     }
@@ -29,4 +30,6 @@ public class SettlementListItem {
 
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public boolean isRequestable() { return requestable; }
+    public void setRequestable(boolean requestable) { this.requestable = requestable; }
 }

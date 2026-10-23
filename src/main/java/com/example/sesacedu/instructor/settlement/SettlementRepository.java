@@ -77,6 +77,27 @@ public class SettlementRepository {
         }
     }
 
+    // ---------------- 정산 신청 (강사가 월 단위로 요청) ----------------
+    /** 새 정산 신청 행. period 는 관리자 서버와 같은 "YYYY-MM". 계좌는 신청 시점의 instructors 값을 복사. */
+    public void insertRequest(long instructorUserId, String period, long revenue, long deduction, long amount,
+                              String bank, String account) {
+        jdbcTemplate.update(
+                "INSERT INTO settlements (user_id, period, revenue, deduction, amount, status, requested, bank, account) " +
+                        "VALUES (?, ?, ?, ?, ?, 'requested', SYSTIMESTAMP, ?, ?)",
+                instructorUserId, period, revenue, deduction, amount, bank, account);
+    }
+
+    /** 반려된 정산 재신청: requested 로 되돌리고 금액을 다시 계산한 값으로, 반려·승인 기록은 비운다. 반려 상태일 때만 바뀐다. */
+    public int reRequest(int sid, long instructorUserId, long revenue, long deduction, long amount,
+                         String bank, String account) {
+        return jdbcTemplate.update(
+                "UPDATE settlements SET status = 'requested', requested = SYSTIMESTAMP, " +
+                        "       revenue = ?, deduction = ?, amount = ?, bank = ?, account = ?, " +
+                        "       rejected_at = NULL, reject_reason = NULL, approved_by = NULL, approved_at = NULL " +
+                        "WHERE sid = ? AND user_id = ? AND status = 'rejected'",
+                revenue, deduction, amount, bank, account, sid, instructorUserId);
+    }
+
     // ---------------- 결제 완료 주문의 강의별 순매출 ----------------
     public static class PaidItem {
         public final long lid;
