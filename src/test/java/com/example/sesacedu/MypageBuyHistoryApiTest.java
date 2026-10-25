@@ -339,16 +339,20 @@ class MypageBuyHistoryApiTest {
     }
 
     @Test
-    @DisplayName("상세: 남의 주문·없는 주문·잘못된 orderId는 모두 404 ORDER_NOT_FOUND (IDOR 방지)")
+    @DisplayName("상세: 없는 주문·잘못된 orderId는 404. [의도된 취약점 A01 IDOR] 남의 주문은 user_id 확인이 없어 200으로 열린다")
     void detailNotFound() throws Exception {
-        for (String id : new String[]{"10500", "99999", "0", "-1", "abc", "1.5"}) {
+        for (String id : new String[]{"99999", "0", "-1", "abc", "1.5"}) {
             detail(id)
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"))
                     .andExpect(jsonPath("$.message").value("주문을 찾을 수 없습니다."))
                     .andExpect(jsonPath("$.result").value(nullValue()));
         }
-        // 주인은 볼 수 있다
+        // [IDOR] me 는 10500(other 의 주문)의 주인이 아니지만 순차 oid 로 영수증을 연다 (카드 뒤 4자리까지 노출)
+        detail("10500")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.payment.cardLast4").value("4444"));
+        // 주인도 당연히 볼 수 있다
         mvc.perform(get("/mypage/buy/history/10500").header("Authorization", bearer(other)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.payment.cardLast4").value("4444"));

@@ -180,12 +180,12 @@ class MypageCstQnaApiTest {
                 .andExpect(jsonPath("$.result.editable").value(true));
     }
 
-    @Test @DisplayName("상세 404: 남의 문의, 없는 문의 / 400: iqid 형식 오류")
+    @Test @DisplayName("상세: [의도된 취약점 A01 IDOR] 남의 문의는 소유 확인이 없어 200으로 열린다 / 없는 문의 404 / iqid 형식 오류 400")
     void detailNotMine() throws Exception {
+        // othersQ 는 me 의 문의가 아니지만(작성자 other) 소유 확인이 없어 제목·내용이 그대로 노출된다 = 객체 수준 인가 누락
         mvc.perform(get("/mypage/cstqna/" + othersQ).header("Authorization", bearer(me)))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.code").value("INQUIRY_NOT_FOUND"))
-                .andExpect(jsonPath("$.message").value("문의를 찾을 수 없습니다."));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.title").value("남의 문의"));
         mvc.perform(get("/mypage/cstqna/999999").header("Authorization", bearer(me)))
                 .andExpect(status().isNotFound());
         mvc.perform(get("/mypage/cstqna/abc").header("Authorization", bearer(me)))
@@ -290,17 +290,20 @@ class MypageCstQnaApiTest {
         org.junit.jupiter.api.Assertions.assertEquals(0L, left);
     }
 
-    @Test @DisplayName("삭제 409: 답변 달린 문의 / 404: 남의 문의 / 403: 제한 계정 — 행은 그대로")
+    @Test @DisplayName("삭제 409: 답변 달린 문의 / [의도된 취약점 A01 IDOR] 남의 미답변 문의는 소유 확인이 없어 200 삭제 / 403: 제한 계정")
     void deleteRejected() throws Exception {
         mvc.perform(delete("/mypage/cstqna/" + answered).header("Authorization", bearer(me)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.message").value("답변이 달린 문의는 삭제할 수 없습니다."));
+        // othersQ 는 other 의 미답변 문의지만 소유 확인이 없어 me 가 삭제한다 = 객체 수준 인가 누락
         mvc.perform(delete("/mypage/cstqna/" + othersQ).header("Authorization", bearer(me)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("CST_QNA_DELETED"));
         mvc.perform(delete("/mypage/cstqna/" + pending1).header("Authorization", bearer(banned)))
                 .andExpect(status().isForbidden());
+        // answered(409)·pending1(403)은 남고 othersQ 만 삭제되어 2건 남는다
         Long left = jdbc.queryForObject("SELECT COUNT(*) FROM inquiries WHERE iqid IN (?, ?, ?)", Long.class,
                 answered, othersQ, pending1);
-        org.junit.jupiter.api.Assertions.assertEquals(3L, left);
+        org.junit.jupiter.api.Assertions.assertEquals(2L, left);
     }
 }

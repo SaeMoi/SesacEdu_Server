@@ -305,7 +305,7 @@ class PaymentApiTest {
     void payCard() throws Exception {
         // 39000 + 49000 = 88000, 쿠폰 8000 → Aprice 80000
         long oid = order("12, 7", 9101L, 0, "CARD");
-        String json = "{\"orderId\":" + oid + ",\"amount\":1,\"card\":{\"number\":\"" + GOOD_CARD.replaceAll("(\\d{4})(?=\\d)", "$1-")
+        String json = "{\"orderId\":" + oid + ",\"card\":{\"number\":\"" + GOOD_CARD.replaceAll("(\\d{4})(?=\\d)", "$1-")
                 + "\",\"expiry\":\"" + NEXT_YEAR + "\",\"cvc\":\"123\"}}";
         pay(me, json)
                 .andExpect(status().isOk())
@@ -333,6 +333,22 @@ class PaymentApiTest {
                 .andExpect(jsonPath("$.code").value("ALREADY_PAID"))
                 .andExpect(jsonPath("$.result").value(nullValue()));
         assertEquals(1, ledgerRows(String.valueOf(oid)));
+    }
+
+    @Test @DisplayName("[의도된 취약점 A04/A08] 결제 금액 조작: 본문 amount가 주문 금액(Aprice) 대신 승인·원장에 쓰인다")
+    void payPriceTamper() throws Exception {
+        // 주문 금액(Aprice)은 80000이지만, 본문 amount=100으로 승인받아 100원만 결제된다
+        long oid = order("12, 7", 9101L, 0, "CARD");
+        String json = "{\"orderId\":" + oid + ",\"amount\":100,\"card\":{\"number\":\"" + GOOD_CARD
+                + "\",\"expiry\":\"" + NEXT_YEAR + "\",\"cvc\":\"123\",\"installment\":0}}";
+        pay(me, json)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("PAYMENT_COMPLETED"))
+                .andExpect(jsonPath("$.result.status").value("paid"));
+        assertEquals("paid", orderStatus(oid));
+        // 원장(가상 PG)에 조작된 금액 100이 APPROVED 로 기록된다 — 가격 조작 성공
+        assertTrue(ledgerLines().stream().anyMatch(l -> l.contains(",APPROVED,100,KRW,CARD,")),
+                "본문 amount=100이 그대로 승인되어 원장에 100으로 남아야 한다");
     }
 
     @Test @DisplayName("결제 200 계좌이체")

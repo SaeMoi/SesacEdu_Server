@@ -220,23 +220,24 @@ class ForumApiTest {
     }
 
     @Test
-    @DisplayName("GET /forum: sort·page·size 오류는 400 INVALID_INPUT, 틀린 항목 모두 errors[]")
+    @DisplayName("GET /forum: page·size 오류는 400 INVALID_INPUT. [의도된 취약점 A03 SQLi] sort 는 더 이상 화이트리스트로 막지 않는다")
     void listInvalid() throws Exception {
+        // sort=FREE 는 이제 거절되지 않고(화이트리스트 제거) default 분기로 간다. page·size 만 여전히 검증된다.
         mvc.perform(get("/forum").param("sort", "FREE").param("page", "-1").param("size", "51"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("INVALID_INPUT"))
                 .andExpect(jsonPath("$.message").value("입력값을 확인해주세요."))
-                .andExpect(jsonPath("$.result.errors[*].field").value(contains("sort", "page", "size")))
-                .andExpect(jsonPath("$.result.errors[0].reason").value("ALL, QUESTION, STUDY, PROJECT, REVIEW 중 하나여야 합니다."));
+                .andExpect(jsonPath("$.result.errors[*].field").value(contains("page", "size")));
+        // sort=all 도 통과(검증 없음), size=abc 만 400
         mvc.perform(get("/forum").param("sort", "all").param("size", "abc"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.result.errors[*].field").value(contains("sort", "size")));
+                .andExpect(jsonPath("$.result.errors[*].field").value(contains("size")));
     }
 
     // ================================================================ POST /forum/posts
 
     @Test
-    @DisplayName("POST /forum/posts: 201 + Location, 작성자 = 토큰 sub (요청의 userId 무시), 본문은 허용 서식만 저장, updated null")
+    @DisplayName("POST /forum/posts: 201 + Location, 작성자 = 토큰 sub (요청의 userId 무시), 본문 원본 HTML 저장(의도된 저장형 XSS), updated null")
     void createPost() throws Exception {
         String json = "{\"category\":\"QUESTION\",\"title\":\"  웹 보안 기초를 함께 공부해요  \",\"userId\":" + other
                 + ",\"content\":\"<p onclick=\\\"x()\\\">인증과 인가의 차이를 <strong>함께 정리</strong>해 보고 싶어요.</p><script>alert(1)</script><a href=\\\"javascript:alert(1)\\\">링크</a>\"}";
@@ -258,7 +259,9 @@ class ForumApiTest {
         assertThat(row.get("CATEGORY")).isEqualTo("QUESTION");
         assertThat(row.get("UPDATED")).isNull();
         String saved = jdbc.queryForObject("SELECT content FROM posts WHERE pid = ?", String.class, pid);
-        assertThat(saved).contains("<strong>함께 정리</strong>").doesNotContain("script", "onclick", "javascript:");
+        // [의도된 취약점 — 저장형 XSS] 정제되지 않은 원본 HTML(스크립트·onclick·javascript: href)이 그대로 저장됨을 검증
+        assertThat(saved).contains("<strong>함께 정리</strong>")
+                .contains("<script>alert(1)</script>", "onclick=\"x()\"", "href=\"javascript:alert(1)\"");
 
         mvc.perform(get("/forum/" + pid)).andExpect(jsonPath("$.result.post.title").value("웹 보안 기초를 함께 공부해요"));
     }
@@ -482,28 +485,26 @@ class ForumApiTest {
     }
 
     @Test
-    @DisplayName("DELETE /forum/{pid}: 남의 글 403 NOT_POST_AUTHOR, 관리자(DB auth=3)는 200")
+    @DisplayName("DELETE /forum/{pid}: [의도된 취약점 A01 IDOR] 작성자·관리자 확인이 없어 로그인만 하면 남의 글도 200으로 삭제")
     void deletePostPermission() throws Exception {
+        // me 는 102(other 의 글)의 작성자가 아니지만 삭제된다 = 객체 수준 인가 누락
         mvc.perform(delete("/forum/102").header("Authorization", bearer(me)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_POST_AUTHOR"))
-                .andExpect(jsonPath("$.message").value("본인이 작성한 게시글만 삭제할 수 있습니다."))
-                .andExpect(jsonPath("$.result").value(nullValue()));
-        assertThat(count("SELECT COUNT(*) FROM posts WHERE pid = 102")).isEqualTo(1);
-        mvc.perform(delete("/forum/102").header("Authorization", bearer(admin)))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("FORUM_POST_DELETED"))
+                .andExpect(jsonPath("$.result.postId").value(102))
                 .andExpect(jsonPath("$.result.deletedCommentCount").value(1));
+        assertThat(count("SELECT COUNT(*) FROM posts WHERE pid = 102")).isZero();
     }
 
     @Test
-    @DisplayName("DELETE /forum/{pid}: 토큰 role이 ADMIN이어도 DB auth가 관리자가 아니면 403")
+    @DisplayName("DELETE /forum/{pid}: [의도된 취약점 A01] 작성자 확인이 없어 아무 로그인 토큰이나 남의 글을 삭제한다")
     void deletePostRoleFromDb() throws Exception {
-        String fakeAdmin = Jwts.builder().subject(String.valueOf(me)).claim("role", "ADMIN").claim("reissue_num", 2)
+        String anyToken = Jwts.builder().subject(String.valueOf(me)).claim("role", "STUDENT").claim("reissue_num", 2)
                 .expiration(new Date(System.currentTimeMillis() + 3_600_000))
                 .signWith(Keys.hmacShaKeyFor(SECRET.getBytes(StandardCharsets.UTF_8)), Jwts.SIG.HS256).compact();
-        mvc.perform(delete("/forum/102").header("Authorization", "Bearer " + fakeAdmin))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_POST_AUTHOR"));
+        mvc.perform(delete("/forum/102").header("Authorization", "Bearer " + anyToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("FORUM_POST_DELETED"));
     }
 
     @Test
@@ -546,15 +547,14 @@ class ForumApiTest {
     }
 
     @Test
-    @DisplayName("DELETE /forum/{pid}/comment: 게시글 작성자라도 남의 댓글은 403 NOT_COMMENT_AUTHOR, 관리자는 200")
+    @DisplayName("DELETE /forum/{pid}/comment: [의도된 취약점 A01 IDOR] 댓글 작성자 확인이 없어 남의 댓글도 200으로 삭제")
     void deleteCommentPermission() throws Exception {
+        // 501 은 me 의 댓글이 아니라 other 의 댓글이지만 삭제된다 = 객체 수준 인가 누락
         mvc.perform(delete("/forum/101/comment").param("commentId", "501").header("Authorization", bearer(me)))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("NOT_COMMENT_AUTHOR"))
-                .andExpect(jsonPath("$.message").value("본인이 작성한 댓글만 삭제할 수 있습니다."));
-        assertThat(count("SELECT COUNT(*) FROM comments WHERE cmid = 501")).isEqualTo(1);
-        mvc.perform(delete("/forum/101/comment").param("commentId", "501").header("Authorization", bearer(admin)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value("FORUM_COMMENT_DELETED"))
+                .andExpect(jsonPath("$.result.commentId").value(501));
+        assertThat(count("SELECT COUNT(*) FROM comments WHERE cmid = 501")).isZero();
     }
 
     @Test

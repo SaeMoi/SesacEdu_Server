@@ -263,42 +263,69 @@ class MypageProfileApiTest {
         return new MockMultipartFile("image", filename, contentType, bytes);
     }
 
-    @Test @DisplayName("사진 변경 200: JPG·PNG 모두 400×400 PNG {user_id}_profile.png로 저장, DB에 파일명만, URL ?v=, GET /mypage 같은 URL")
+    @Test @DisplayName("사진 변경 200: [의도된 취약점] 원본 바이트를 클라이언트 파일명·확장자 그대로 저장(재인코딩 없음, 경로우회만 차단), DB에 그 이름, GET /mypage 같은 URL")
     void uploadSuccess() throws Exception {
         for (String fmt : new String[]{"jpg", "png"}) {
-            MvcResult r = mvc.perform(upload(studentId, part(image(fmt, 800, 600), "../../evil." + fmt, "image/" + fmt)))
+            byte[] uploaded = image(fmt, 800, 600);
+            MvcResult r = mvc.perform(upload(studentId, part(uploaded, "evil." + fmt, "image/" + fmt)))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.code").value("PROFILE_IMAGE_UPDATED"))
                     .andExpect(jsonPath("$.message").value("프로필 사진이 변경되었습니다."))
                     .andExpect(jsonPath("$.result.profileImageUrl",
-                            matchesPattern("/images/profile/" + studentId + "_profile\\.png\\?v=\\d+")))
+                            matchesPattern("/images/profile/evil\\." + fmt + "(\\?v=\\d+)?")))
                     .andReturn();
             String url = JsonPath.read(r.getResponse().getContentAsString(), "$.result.profileImageUrl");
-            Path saved = Paths.get(UPLOAD_DIR, studentId + "_profile.png");
-            BufferedImage stored = ImageIO.read(saved.toFile());
-            assertEquals(400, stored.getWidth());
-            assertEquals(400, stored.getHeight());
-            byte[] head = Arrays.copyOf(Files.readAllBytes(saved), 4);
-            assertArrayEquals(new byte[]{(byte) 0x89, 'P', 'N', 'G'}, head);
-            assertEquals(studentId + "_profile.png",
+            // 재인코딩 없이 업로드 원본을 클라이언트 파일명 그대로 저장
+            Path saved = Paths.get(UPLOAD_DIR, "evil." + fmt);
+            assertTrue(Files.exists(saved));
+            assertArrayEquals(uploaded, Files.readAllBytes(saved));
+            assertEquals("evil." + fmt,
                     jdbc.queryForObject("SELECT picture FROM users WHERE user_id = ?", String.class, studentId));
             mvc.perform(get("/mypage").header("Authorization", bearer(studentId)))
                     .andExpect(jsonPath("$.result.profileImageUrl").value(url));
         }
-        try (var files = Files.list(Paths.get(UPLOAD_DIR))) {
-            assertEquals(1, files.count(), "임시 파일이 남으면 안 됨");
-        }
     }
 
-    @Test @DisplayName("사진 변경: 이미지 뒤에 붙인 HTML은 재인코딩으로 사라짐")
-    void uploadStripsTrailingPayload() throws Exception {
+    @Test @DisplayName("사진 변경: [의도된 취약점] 이미지 폴리글랏(헤더+스크립트)이 재인코딩 없이 그대로 저장·서빙된다 = 웹셸 업로드")
+    void uploadWebshellPolyglot() throws Exception {
         byte[] img = image("png", 100, 100);
-        byte[] payload = "<script>alert(1)</script>".getBytes(StandardCharsets.UTF_8);
+        byte[] payload = "<% out.println(\"PWNED\"); %>".getBytes(StandardCharsets.UTF_8);
         byte[] polyglot = Arrays.copyOf(img, img.length + payload.length);
         System.arraycopy(payload, 0, polyglot, img.length, payload.length);
-        mvc.perform(upload(studentId, part(polyglot, "a.png", "image/png"))).andExpect(status().isOk());
-        String stored = new String(Files.readAllBytes(Paths.get(UPLOAD_DIR, studentId + "_profile.png")), StandardCharsets.ISO_8859_1);
-        assertFalse(stored.contains("<script>"));
+        // PNG 매직바이트로 형식검사 통과, shell.jsp 이름으로 업로드
+        MvcResult r = mvc.perform(upload(studentId, part(polyglot, "shell.jsp", "image/png")))
+                .andExpect(status().isOk()).andReturn();
+        String url = JsonPath.read(r.getResponse().getContentAsString(), "$.result.profileImageUrl");
+        assertTrue(url.startsWith("/images/profile/shell.jsp"), "저장 경로가 공격자 파일명 그대로");
+        // 디스크에 payload 보존 (재인코딩으로 사라지지 않음)
+        byte[] stored = Files.readAllBytes(Paths.get(UPLOAD_DIR, "shell.jsp"));
+        assertTrue(new String(stored, StandardCharsets.ISO_8859_1).contains("out.println(\"PWNED\")"));
+        // 비인증으로 그대로 서빙됨 (바이트 보존)
+        byte[] served = mvc.perform(get("/images/profile/shell.jsp")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        assertArrayEquals(stored, served);
+    }
+
+    @Test @DisplayName("사진 변경: [의도된 취약점 A01 Path Traversal] ../ 파일명이 images 폴더 밖으로 기록된다 (write-anywhere)")
+    void uploadPathTraversalEscapesDir() throws Exception {
+        byte[] img = image("png", 60, 60);
+        byte[] payload = "<% /* shell */ %>".getBytes(StandardCharsets.UTF_8);
+        byte[] polyglot = Arrays.copyOf(img, img.length + payload.length);
+        System.arraycopy(payload, 0, polyglot, img.length, payload.length);
+        // UPLOAD_DIR 의 부모(build/) 아래 전용 하위폴더로만 탈출시켜 테스트 샌드박스 안에 둔다 (실제 시스템 경로로 쓰지 않음)
+        String sub = "esc-" + java.util.UUID.randomUUID();
+        Path profileDir = Paths.get(UPLOAD_DIR).toAbsolutePath().normalize();
+        Path escaped = profileDir.resolve("../" + sub + "/shell.jsp").normalize();   // = build/esc-xxx/shell.jsp
+        try {
+            mvc.perform(upload(studentId, part(polyglot, "../" + sub + "/shell.jsp", "image/png")))
+                    .andExpect(status().isOk());
+            assertTrue(Files.exists(escaped), "탈출 경로에 파일이 생겨야 함: " + escaped);
+            assertFalse(escaped.startsWith(profileDir), "프로필 폴더 밖이어야 함");
+            assertArrayEquals(polyglot, Files.readAllBytes(escaped));   // 재인코딩 없이 원본 보존
+        } finally {
+            Files.deleteIfExists(escaped);
+            Files.deleteIfExists(escaped.getParent());
+        }
     }
 
     @Test @DisplayName("사진 변경 400 INVALID_INPUT: image 없음, 빈 파일, 2개, multipart 아님")
@@ -406,19 +433,22 @@ class MypageProfileApiTest {
                 .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
-    @Test @DisplayName("GET /images/profile/{파일명}: 인증 없이 PNG, nosniff·inline·max-age=86400, 다른 형식 파일명은 404")
+    @Test @DisplayName("GET /images/profile/{파일명}: 인증 없이 서빙, nosniff·inline·max-age. [의도된 취약점] 화이트리스트 제거로 임의 확장자(.txt 등)도 서빙됨(404 아님)")
     void serveImage() throws Exception {
         mvc.perform(upload(studentId, part(image("png", 50, 50), "a.png", "image/png"))).andExpect(status().isOk());
-        MvcResult r = mvc.perform(get("/images/profile/" + studentId + "_profile.png"))
+        MvcResult r = mvc.perform(get("/images/profile/a.png"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentType("image/png"))
                 .andExpect(header().string("X-Content-Type-Options", "nosniff"))
                 .andExpect(header().string("Content-Disposition", "inline"))
                 .andExpect(header().string("Cache-Control", containsString("max-age=86400")))
                 .andReturn();
         assertNotNull(ImageIO.read(new ByteArrayInputStream(r.getResponse().getContentAsByteArray())));
-        Files.write(Paths.get(UPLOAD_DIR, "secret.txt"), "x".getBytes(StandardCharsets.UTF_8));
-        mvc.perform(get("/images/profile/secret.txt")).andExpect(status().isNotFound());
+        // [의도된 취약점] 비이미지 확장자도 그대로 서빙 (원래는 ^[0-9]+_profile\.png$ 외 404 였다)
+        Files.write(Paths.get(UPLOAD_DIR, "secret.txt"), "topsecret".getBytes(StandardCharsets.UTF_8));
+        mvc.perform(get("/images/profile/secret.txt"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("topsecret")));
+        // 없는 파일은 여전히 404
         mvc.perform(get("/images/profile/999999_profile.png")).andExpect(status().isNotFound());
     }
 
