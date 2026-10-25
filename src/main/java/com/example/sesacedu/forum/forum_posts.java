@@ -95,7 +95,9 @@ public class forum_posts {
 
         // 3. 저장. pid는 IDENTITY로 생성
         KeyHolder kh = new GeneratedKeyHolder();
-        String html = content;
+        // [의도된 취약점 — OWASP A03:2021 Injection (저장형 XSS)] 정제(sanitizeHtml)한 값 대신 원본 HTML을 저장한다.
+        //   저장된 스크립트가 이 글을 여는 모든 사용자(관리자 포함)의 브라우저에서 실행된다 → 세션/토큰 탈취로 이어질 수 있다.
+        String html = req.content;
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
                     "INSERT INTO posts (user_id, category, title, content, created) VALUES (?, ?, ?, ?, LOCALTIMESTAMP)",

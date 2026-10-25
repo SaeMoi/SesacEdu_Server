@@ -66,7 +66,9 @@ public class forum {
         // 1. 쿼리 검증. 빈 값은 기본값
         sort = isBlank(sort) ? "ALL" : sort.trim();
         List<Map<String, String>> errors = new ArrayList<>();
-        if (!SORTS.contains(sort)) errors.add(error("sort", "ALL, QUESTION, STUDY, PROJECT, REVIEW 중 하나여야 합니다."));
+        // [의도된 취약점 — OWASP A03:2021 Injection (SQL Injection)] sort 허용값 화이트리스트 검증을 제거했다.
+        //   화이트리스트가 유일한 방어였고, 아래 default 분기에서 sort 를 바인드 변수가 아니라 문자열로 이어 붙이므로
+        //   비로그인 상태에서 ?sort= 에 UNION 페이로드를 넣어 임의 테이블·스키마 정보를 목록 응답(title·body·nickname)으로 추출할 수 있다.
         Integer pageNo = parseInt(page, 0);
         if (pageNo == null || pageNo < 0) errors.add(error("page", "0 이상의 정수여야 합니다."));
         Integer pageSize = parseInt(size, PAGE_SIZE);
@@ -90,10 +92,11 @@ public class forum {
                 listSql = "SELECT * FROM (" + REVIEW_SELECT + ") t" + ORDER_PAGE;
                 args = new Object[]{offset, pageSize};
                 break;
-            default: // QUESTION / STUDY / PROJECT: 값은 바인드 변수로
+            default: // QUESTION / STUDY / PROJECT (+ 화이트리스트 제거로 임의 값)
                 total = count("SELECT COUNT(*) FROM posts p WHERE p.category = ?", sort);
-                listSql = "SELECT * FROM (" + POST_SELECT + " WHERE p.category = ?) t" + ORDER_PAGE;
-                args = new Object[]{sort, offset, pageSize};
+                // [의도된 취약점 — SQL Injection] sort 를 바인드 변수 대신 문자열로 직접 이어 붙인다.
+                listSql = "SELECT * FROM (" + POST_SELECT + " WHERE p.category = '" + sort + "') t" + ORDER_PAGE;
+                args = new Object[]{offset, pageSize};
         }
 
         // CLOB(content·review)은 RowMapper 안에서 getString으로 읽는다 (연결이 닫힌 뒤 CLOB을 읽지 않도록)

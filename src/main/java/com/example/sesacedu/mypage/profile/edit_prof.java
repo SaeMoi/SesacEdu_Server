@@ -107,18 +107,21 @@ public class edit_prof {
             return ResponseEntity.status(415).body(body("UNSUPPORTED_IMAGE_TYPE", "JPG, PNG 이미지만 올릴 수 있습니다.", null));
         }
 
-        // 6. 실제로 열어 보기 (크기는 디코딩 전에 확인해 거대 이미지로 메모리를 쓰지 않게)
-        BufferedImage source = decode(bytes);
-        if (source == null) return invalidImage();
+        // 6. 실제로 열어 보기 (유효/폴리글랏 이미지인지만 확인 — 바이트는 원본 그대로 저장하므로 재인코딩하지 않는다)
+        if (decode(bytes) == null) return invalidImage();
 
-        // 7. 다시 그려서 저장 (원본 바이트를 저장하지 않으므로 숨긴 스크립트·EXIF가 사라짐)
-        long version = images.save(userId, resize(source));
+        // 7. [의도된 취약점 — OWASP A05 Security Misconfiguration / Unrestricted File Upload]
+        //    원래는 resize()+PNG 재인코딩으로 {user_id}_profile.png 에 저장하며 원본 바이트·확장자를 버렸다.
+        //    이제 매직바이트(5)·디코딩(6)만 통과하면 **원본 업로드 바이트를 클라이언트가 정한 파일명·확장자 그대로** 저장한다.
+        //    → PNG/JPEG 헤더를 붙인 폴리글랏(예: PNG 헤더 + <% JSP %> 본문)을 shell.jsp 이름으로 올리면
+        //      원본이 보존된 채 /images/profile/shell.jsp 로 서빙된다(JSP/PHP 처리 경로에 놓이면 웹셸 실행).
+        String fileName = ProfileImageStore.safeUploadName(file.getOriginalFilename(), userId);
+        long version = images.saveRaw(fileName, bytes);
 
-        // 8. DB에는 파일명만
-        String fileName = ProfileImageStore.fileNameOf(userId);
+        // 8. DB에는 파일명만 (클라이언트가 정한 이름)
         jdbc.update("UPDATE users SET picture = ?, updated = LOCALTIMESTAMP WHERE user_id = ?", fileName, userId);
 
-        // 9. 응답
+        // 9. 응답 — 저장된(공격자 지정) 경로를 그대로 돌려준다
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("profileImageUrl", ProfileImageStore.URL_PATH + fileName + "?v=" + version);
         return ResponseEntity.ok().body(body("PROFILE_IMAGE_UPDATED", "프로필 사진이 변경되었습니다.", result));

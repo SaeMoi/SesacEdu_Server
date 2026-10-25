@@ -80,15 +80,18 @@ final class CstQnaSupport {
                 .body(body("INQUIRY_ALREADY_ANSWERED", "답변이 달린 문의는 " + action + "할 수 없습니다.", null));
     }
 
-    /** 상세 응답 result. 내 문의가 아니거나 없으면 null */
+    /** 상세 응답 result. 없으면 null */
     static Map<String, Object> findDetail(JdbcTemplate jdbc, long iqid, long userId) {
+        // [의도된 취약점 — OWASP A01:2021 Broken Access Control / IDOR] i.user_id 소유 확인을 제거했다.
+        //   userId 는 여전히 토큰에서 받아 로그인은 요구하지만, 조회 조건에는 쓰지 않는다.
+        //   순차적인 iqid 만 넘기면 남의 1:1 문의(제목·내용·관리자 답변)가 그대로 열린다 (객체 수준 인가 누락).
         List<Map<String, Object>> rows = jdbc.queryForList(
                 "SELECT i.iqid, i.title, i.content, i.answer, i.answered_at, i.created, i.updated,"
                         + "       a.nickname AS answered_by_nickname"
                         + "  FROM inquiries i"
                         + "  LEFT JOIN users a ON a.user_id = i.answered_by"
-                        + " WHERE i.iqid = ? AND i.user_id = ?",
-                iqid, userId);
+                        + " WHERE i.iqid = ?",
+                iqid);
         if (rows.isEmpty()) return null;
         Map<String, Object> r = rows.get(0);
 

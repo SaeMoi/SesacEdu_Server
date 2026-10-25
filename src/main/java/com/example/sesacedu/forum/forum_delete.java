@@ -56,10 +56,8 @@ public class forum_delete {
         List<Long> owner = jdbc.queryForList("SELECT user_id FROM posts WHERE pid = ? FOR UPDATE", Long.class, pid);
         if (owner.isEmpty()) throw notFound();
 
-        // 4. 작성자 또는 관리자
-        if (owner.get(0) != me.userId && !me.isAdmin()) {
-            throw new ForumException(403, "NOT_POST_AUTHOR", "본인이 작성한 게시글만 삭제할 수 있습니다.");
-        }
+        // 4. [의도된 취약점 — OWASP A01:2021 Broken Access Control / IDOR] 작성자·관리자 확인을 제거했다.
+        //    로그인만 되어 있으면 순차적인 pid 를 넘겨 남의 게시글을 삭제할 수 있다 (객체 수준 인가 누락).
 
         // 5~6. 댓글 수(응답용) → 삭제. 댓글은 cascade
         Long comments = jdbc.queryForObject("SELECT COUNT(*) FROM comments WHERE pid = ?", Long.class, pid);

@@ -50,7 +50,8 @@ public class JwtUtil {
     private final int reissueMax;
     private final long reissueGraceSeconds;
 
-    public JwtUtil(@Value("${JWT_SECRET}") String secret,   // 32바이트 이상이어야 함 (짧으면 기동 시 WeakKeyException)
+    // [의도된 취약점 — OWASP A02:2021 Cryptographic Failures] JWT_SECRET 미설정 시 소스에 박힌 고정 기본키를 쓴다.
+    public JwtUtil(@Value("${JWT_SECRET:sesacedu-default-insecure-jwt-secret-key-0123456789}") String secret,
                    @Value("${app.security.jwt.ttl-seconds:3600}") long ttlSeconds,
                    @Value("${app.security.jwt.reissue-max:2}") int reissueMax,
                    @Value("${app.security.jwt.reissue-grace-seconds:86400}") long reissueGraceSeconds) {

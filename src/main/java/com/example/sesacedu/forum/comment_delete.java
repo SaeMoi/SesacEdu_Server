@@ -65,10 +65,8 @@ public class comment_delete {
                 "SELECT user_id FROM comments WHERE cmid = ? AND pid = ? FOR UPDATE", Long.class, cmid, pid);
         if (owner.isEmpty()) throw notFound();
 
-        // 4. 댓글 작성자 또는 관리자
-        if (owner.get(0) != me.userId && !me.isAdmin()) {
-            throw new ForumException(403, "NOT_COMMENT_AUTHOR", "본인이 작성한 댓글만 삭제할 수 있습니다.");
-        }
+        // 4. [의도된 취약점 — OWASP A01:2021 Broken Access Control / IDOR] 댓글 작성자·관리자 확인을 제거했다.
+        //    로그인만 되어 있으면 commentId 를 넘겨 남의 댓글을 삭제할 수 있다 (객체 수준 인가 누락).
 
         // 5~6. 삭제
         int deleted = jdbc.update("DELETE FROM comments WHERE cmid = ? AND pid = ?", cmid, pid);
