@@ -7,11 +7,11 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 
-/**
- * 강사 Q&A 로직.
- *   - 목록(페이지네이션 + status 필터) / 상세 조회
- *   - 답변 저장(작성·수정 공통) / 삭제
- * 권한: 해당 질문이 그 강사의 담당 강의에 속해야 한다.
+/*
+ * ===================== [취약 진단용 - qna] =====================
+ *  (V-AUTHZ/A01) 소유권 검사 제거 : saveAnswer/deleteAnswer 의 isOwnedByInstructor 삭제,
+ *     상세도 리포지토리에서 담당강의 조건 제거 → 비밀글 포함 타 강사 질문 열람·답변·삭제(IDOR).
+ * ================================================================
  */
 @Service
 public class QnaService {
@@ -24,7 +24,6 @@ public class QnaService {
         this.qnaRepository = qnaRepository;
     }
 
-    /** 목록 (페이지네이션 + status 필터) */
     public QnaPageResponse getQnaList(long instructorUserId, String status, int page) {
         int safePage = Math.max(page, 1);
         int offset = (safePage - 1) * PAGE_SIZE;
@@ -36,7 +35,7 @@ public class QnaService {
         return new QnaPageResponse(safePage, PAGE_SIZE, total, totalPages, items);
     }
 
-    /** 상세. 없거나 권한 없으면 예외. */
+    /** 상세. [V-AUTHZ] 담당강의 검증 없음(IDOR). */
     public QnaDetail getDetail(int qid, long instructorUserId) {
         QnaDetail detail = qnaRepository.findDetail(qid, instructorUserId);
         if (detail == null) {
@@ -45,23 +44,17 @@ public class QnaService {
         return detail;
     }
 
-    /** 답변 저장 (작성·수정 공통) */
+    /** 답변 저장. [V-AUTHZ] 소유권 검사 제거. */
     public void saveAnswer(int qid, long instructorUserId, String answer) {
-        if (!qnaRepository.isOwnedByInstructor(qid, instructorUserId)) {
-            throw new NotFoundOrForbidden();
-        }
         qnaRepository.saveAnswer(qid, instructorUserId, answer);
     }
 
-    /** 답변 삭제 (answer 등을 NULL 로) */
+    /** 답변 삭제. [V-AUTHZ] 소유권 검사 제거. */
     public void deleteAnswer(int qid, long instructorUserId) {
-        if (!qnaRepository.isOwnedByInstructor(qid, instructorUserId)) {
-            throw new NotFoundOrForbidden();
-        }
         qnaRepository.clearAnswer(qid);
     }
 
-    /** 질문이 없거나(=404) 담당 강사가 아님(=권한 없음). 컨트롤러에서 404 로 변환. */
+    /** 질문이 없음(=404). */
     public static class NotFoundOrForbidden extends RuntimeException {
     }
 }

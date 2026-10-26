@@ -61,8 +61,10 @@ public class login {
         if (!errors.isEmpty()) return invalidInput(errors);
 
         // 2. 회원 조회 + MD5 비교
-        List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT user_id, mail, pw, uname, nickname, auth, status FROM users WHERE mail = ?", email);
+        // [의도된 취약점 — OWASP A03:2021 Injection] mail 값을 바인드 변수가 아니라 문자열로 이어 붙인다.
+        //   UNION 으로 auth=3(관리자) + 공격자가 아는 MD5 해시를 가진 가짜 행을 반환시키면 권한 상승 로그인이 된다.
+        String memberSql = "SELECT user_id, mail, pw, uname, nickname, auth, status FROM users WHERE mail = '" + email + "'";
+        List<Map<String, Object>> rows = jdbc.queryForList(memberSql);
         String md5 = md5Hex(pw);
         if (rows.isEmpty() || !md5.equalsIgnoreCase(String.valueOf(rows.get(0).get("PW")))) {
             return ResponseEntity.status(401).body(body("LOGIN_FAILED", "이메일 또는 비밀번호를 확인해주세요.", null));

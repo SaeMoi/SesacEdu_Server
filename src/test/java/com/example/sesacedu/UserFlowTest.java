@@ -184,7 +184,8 @@ class UserFlowTest {
                         .header("Authorization", t2))
                 .andExpect(status().isOk()).andReturn();
         String url = JsonPath.read(up.getResponse().getContentAsString(), "$.result.profileImageUrl");
-        assertTrue(url.startsWith("/images/profile/" + id + "_profile.png?v="), url);
+        // [의도된 취약점] 클라이언트 파일명 그대로 저장 → me.png
+        assertTrue(url.startsWith("/images/profile/me.png"), url);
         mvc.perform(get("/mypage").header("Authorization", t2)).andExpect(jsonPath("$.result.profileImageUrl").value(url));
         mvc.perform(get(url.substring(0, url.indexOf('?')))).andExpect(status().isOk()).andExpect(content().contentType("image/png"));
 
@@ -239,7 +240,7 @@ class UserFlowTest {
         mvc.perform(multipart("/mypage/edit_prof").file(new MockMultipartFile("image", "x.png", "image/png", png()))
                 .header("Authorization", ta)).andExpect(status().isOk());
         mvc.perform(get("/mypage").header("Authorization", ta))
-                .andExpect(jsonPath("$.result.profileImageUrl", startsWith("/images/profile/" + a + "_profile.png")));
+                .andExpect(jsonPath("$.result.profileImageUrl", startsWith("/images/profile/x.png")));
         mvc.perform(get("/mypage").header("Authorization", tb))
                 .andExpect(jsonPath("$.result.profileImageUrl").value(nullValue()))
                 .andExpect(jsonPath("$.result.memberId").value(b));

@@ -44,7 +44,8 @@ import static com.example.sesacedu.global.ApiResponse.*;
  * - 승인번호(paymentKey)는 DB에 저장하지 않는다 (CSV 원장 전용, Kim 결정 a안). 결제 정보 원문도 저장·로그하지 않는다.
  * - users 행을 잠그는 이유: 같은 회원의 다른 주문이 동시에 승인될 때 같은 쿠폰·포인트를 두 번 쓰지 못하게 한다.
  * - Aprice가 0인 pending 주문(정상이면 POST /mypage/buy에서 바로 paid)은 가상 PG를 부르지 않고 마무리한다 (paymentKey null).
- * 의도된 취약점 없음 (명세의 가격 조작·IDOR·포인트 경합은 나중에 따로 켠다).
+ * 의도된 취약점 ON (모의해킹용): (CHANGE 2) 요청 amount로 결제 금액 조작 — A04/A08,
+ *   (CHANGE 3) users 행 잠금 제거 + 비원자적 포인트 차감으로 lost-update 경합 — A04. (IDOR는 별도.)
  */
 @RestController
 public class payment {
@@ -136,7 +137,7 @@ public class payment {
 
         // 6. 포인트·쿠폰 사전 확인 (승인 뒤에 모자라면 돈만 나간 주문이 되므로 PG 호출 전에 본다)
         long usePoint = num(order.get("USE_POINT"));
-        jdbc.queryForList("SELECT user_id FROM users WHERE user_id = ? FOR UPDATE", Long.class, userId);
+        // 의도된 취약점 (A04): users 행을 잠그지 않는다 (원래 SELECT ... FOR UPDATE 제거). 동시 결제 시 TOCTOU.
         long point = buy.pointBalance(jdbc, userId);
         if (point < usePoint) {
             Map<String, Object> result = new LinkedHashMap<>();
@@ -160,9 +161,11 @@ public class payment {
         String paymentKey = null;
         String approvedAt = ZonedDateTime.now(KST).format(ISO);
         if (aprice > 0) {
+            // 의도된 취약점 (A04/A08): 요청 본문에 amount가 오면 주문 금액(orders.Aprice) 대신 그 값으로 승인받는다.
+            long chargeAmount = r.amount instanceof Number ? ((Number) r.amount).longValue() : aprice;
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("merchantOrderId", String.valueOf(orderId));
-            payload.put("amount", aprice);
+            payload.put("amount", chargeAmount);
             payload.put("orderName", orderName(names));
             payload.put("method", pay);
             payload.put("CARD".equals(pay) ? "card" : "transfer", info);
@@ -170,7 +173,7 @@ public class payment {
             Map<?, ?> res = reply == null || reply.status != 200 || reply.body == null
                     || !(reply.body.get("result") instanceof Map) ? null : (Map<?, ?>) reply.body.get("result");
             boolean sameOrder = res != null && String.valueOf(orderId).equals(res.get("merchantOrderId"))
-                    && res.get("amount") instanceof Number && ((Number) res.get("amount")).longValue() == aprice;
+                    && res.get("amount") instanceof Number && ((Number) res.get("amount")).longValue() == chargeAmount;
             if (!sameOrder) return pgUnavailable(orderId);
             if ("DECLINED".equals(res.get("status"))) {
                 Map<String, Object> result = new LinkedHashMap<>();
@@ -196,7 +199,9 @@ public class payment {
                     userId, cid));
         }
         if (buy.POINTS_ENABLED && usePoint > 0) {
-            expectOne(jdbc.update("UPDATE users SET point = point - ? WHERE user_id = ? AND point >= ?", usePoint, userId, usePoint));
+            // 의도된 취약점 (A04): 조건부 원자적 차감 대신 읽고-빼고-쓰기 → 행 잠금 제거와 함께 lost update.
+            long current = buy.pointBalance(jdbc, userId);
+            jdbc.update("UPDATE users SET point = ? WHERE user_id = ?", current - usePoint, userId);
         }
         if (!courseIds.isEmpty()) {
             List<Object> args = new ArrayList<>();
@@ -299,6 +304,8 @@ public class payment {
      */
     public static class PayRequest {
         public Object orderId;
+        /** 의도된 취약점 (A04/A08): 결제 금액을 요청에서 받는다. 오면 orders.Aprice 대신 이 값으로 승인받는다 */
+        public Object amount;
         public Object card;
         public Object transfer;
     }

@@ -333,9 +333,9 @@ class PurchaseFlowTest {
                 .andExpect(jsonPath("$.result.coupons", hasSize(0)));
         get(b, "/mypage/buy/history").andExpect(jsonPath("$.result.page.totalElements").value(0));
         get(b, "/mypage/courses").andExpect(jsonPath("$.result.counts.all").value(0));
+        // [의도된 취약점 A01 IDOR — 라운드3 buy_receipt] 소유 확인이 없어 B가 A의 주문 상세/영수증을 200으로 조회한다
         for (long oid : new long[]{paidOid, pendingOid}) {
-            get(b, "/mypage/buy/history/" + oid).andExpect(status().isNotFound())
-                    .andExpect(jsonPath("$.code").value("ORDER_NOT_FOUND"));
+            get(b, "/mypage/buy/history/" + oid).andExpect(status().isOk());
         }
 
         // 결제: A의 pending 주문을 B가 결제할 수 없고, A의 주문은 그대로 pending
@@ -367,7 +367,7 @@ class PurchaseFlowTest {
 
     @Test @DisplayName("쿠폰 규칙: 등록 오류·선착순 소진·강좌 전용·최소 금액, 할인이 가격보다 크면 0원 즉시 완료")
     void couponRules() throws Exception {
-        coupon(9301, "COURSE7ONLY2026", 7L, 50000, 999999, null, FAR);      // 강좌 전용: min_amount는 보지 않음
+        coupon(9301, "COURSE7ONLY2026", 7L, 39000, 999999, null, FAR);      // 강좌 전용: min_amount는 보지 않음 (clamp 제거 후 주문 7(39000)을 0원으로)
         coupon(9302, "BIGORDERMIN2026", null, 3000, 100000, null, FAR);     // 전체용, 10만 원 이상
         coupon(9303, "LIMITEDONE2026", null, 5000, null, 1, FAR);           // 선착순 1장
         coupon(9304, "EXPIREDCODE2025", null, 5000, null, null, Timestamp.valueOf("2025-01-01 00:00:00"));
@@ -403,7 +403,7 @@ class PurchaseFlowTest {
         get(a, "/mypage/buy/cpn?courseIds=7,12,16&couponId=9302").andExpect(status().isOk())
                 .andExpect(jsonPath("$.result.summary.finalAmount").value(113000 - 3000));
 
-        // 강좌 전용 50,000원 쿠폰을 39,000원 강좌에: 할인은 가격까지만 → 0원 → PG 없이 바로 완료
+        // [의도된 취약점 A04] clamp 제거: 강좌 전용 쿠폰(39,000) 전액이 39,000원 강좌에 적용 → 0원 → PG 없이 바로 완료
         long freeOid = ((Number) JsonPath.read(body(order(a, "7", 9301L, "CARD").andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("ORDER_COMPLETED"))
                 .andExpect(jsonPath("$.result.summary.couponDiscountAmount").value(39000))

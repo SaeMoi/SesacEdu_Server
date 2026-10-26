@@ -14,15 +14,12 @@ import org.springframework.stereotype.Repository;
 import java.sql.PreparedStatement;
 import java.util.List;
 
-/**
- * 강의 관리 JDBC. (컬럼명은 rebuild_oracle.sql 기준)
- *   PK          : Lid
- *   난이도       : lvl
- *   한 줄 소개   : headline
- *   소개 본문    : summary
- *   가격        : Lprice
- *   수강생 수는 enrollments 를 COUNT 해서 구한다 (enrollments.Lid 기준).
- * instructorUserId 는 JWT 에서 온 값이라 long 으로 받는다(바인딩이라 타입만 맞으면 됨).
+/*
+ * ===================== [취약 진단용 - lecture] =====================
+ *  (V-AUTHZ/A01) findDetail 의 'AND user_id = ?' 삭제, isOwnedByInstructor 는 항상 true → IDOR
+ *  (V-SQLI/A03)  목록 status, insert/updateBasic/updateAssignment 의 문자열 입력 연결(저장형 SQLi)
+ *  (V-XSS/A03)   name/headline/summary 등 미살균 저장 → 조회 시 그대로 반환되어 저장형 XSS
+ * ================================================================
  */
 @Repository
 public class LectureRepository {
@@ -42,41 +39,29 @@ public class LectureRepository {
                     rs.getString("status"),
                     rs.getInt("student_count"));
 
-    /** 필터 적용 후 전체 개수 (페이지네이션 totalElements 용). */
     public long countList(long instructorUserId, String status) {
+        // [V-SQLI] status/user_id 문자열 연결
         StringBuilder sql = new StringBuilder(
-                "SELECT COUNT(*) FROM lectures WHERE user_id = ? ");
-        Long cnt;
+                "SELECT COUNT(*) FROM lectures WHERE user_id = " + instructorUserId + " ");
         if (status != null && !status.isBlank()) {
-            sql.append("AND status = ?");
-            cnt = jdbcTemplate.queryForObject(sql.toString(), Long.class, instructorUserId, status);
-        } else {
-            cnt = jdbcTemplate.queryForObject(sql.toString(), Long.class, instructorUserId);
+            sql.append("AND status = '" + status + "'");
         }
+        Long cnt = jdbcTemplate.queryForObject(sql.toString(), Long.class);
         return cnt == null ? 0L : cnt;
     }
 
-    /**
-     * 목록 한 페이지 조회 (최신 등록순). Oracle 12c+ OFFSET/FETCH.
-     * @param offset 건너뛸 행 수 (= (page-1) * size)
-     * @param limit  가져올 행 수 (= size)
-     */
     public List<LectureListItem> findList(long instructorUserId, String status, int offset, int limit) {
+        // [V-SQLI] status/offset/limit/user_id 문자열 연결
         StringBuilder sql = new StringBuilder(
                 "SELECT l.Lid, l.name, l.status, " +
                         "       (SELECT COUNT(*) FROM enrollments e WHERE e.Lid = l.Lid) AS student_count " +
                         "FROM lectures l " +
-                        "WHERE l.user_id = ? ");
+                        "WHERE l.user_id = " + instructorUserId + " ");
         if (status != null && !status.isBlank()) {
-            sql.append("AND l.status = ? ");
-            sql.append("ORDER BY l.created DESC, l.Lid DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
-            return jdbcTemplate.query(sql.toString(), LIST_MAPPER,
-                    instructorUserId, status, offset, limit);
-        } else {
-            sql.append("ORDER BY l.created DESC, l.Lid DESC OFFSET ? ROWS FETCH NEXT ? ROWS ONLY");
-            return jdbcTemplate.query(sql.toString(), LIST_MAPPER,
-                    instructorUserId, offset, limit);
+            sql.append("AND l.status = '" + status + "' ");
         }
+        sql.append("ORDER BY l.created DESC, l.Lid DESC OFFSET " + offset + " ROWS FETCH NEXT " + limit + " ROWS ONLY");
+        return jdbcTemplate.query(sql.toString(), LIST_MAPPER);
     }
 
     // ---------------- 상세 ----------------
@@ -100,60 +85,54 @@ public class LectureRepository {
         return d;
     };
 
+    /** [V-AUTHZ] 'AND user_id = ?' 제거 → 아무 강의나 조회(IDOR). [V-SQLI] lid 연결. */
     public LectureDetail findDetail(int lid, long instructorUserId) {
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT Lid, name, category, LLEVEL AS lvl, headline, summary, Lprice, status, " +
                             "       picture, video_filename, material_filename, " +
                             "       assignment_title, assignment_content, assignment_file_type " +
-                            "FROM lectures WHERE Lid = ? AND user_id = ?",
-                    DETAIL_MAPPER, lid, instructorUserId);
+                            "FROM lectures WHERE Lid = " + lid,
+                    DETAIL_MAPPER);
         } catch (EmptyResultDataAccessException e) {
             return null;
         }
     }
 
-    /** 강의 과제 설정. title 이 NULL 이면 과제를 없앤다 (학생 화면에 "등록된 과제가 없습니다"). */
+    /** [V-SQLI/V-XSS] title/content/fileType 문자열 연결 → 저장형 SQLi/XSS. */
     public void updateAssignment(int lid, String title, String content, String fileType) {
         jdbcTemplate.update(
-                "UPDATE lectures SET assignment_title = ?, assignment_content = ?, assignment_file_type = ?, " +
-                        "updated = SYSTIMESTAMP WHERE Lid = ?",
-                title, content, fileType, lid);
+                "UPDATE lectures SET assignment_title = " + quote(title) +
+                        ", assignment_content = " + quote(content) +
+                        ", assignment_file_type = " + quote(fileType) +
+                        ", updated = SYSTIMESTAMP WHERE Lid = " + lid);
     }
 
     // ---------------- 소유권 확인 ----------------
 
-    /** instructors 행이 있는지. 없으면 lectures.user_id FK 에 걸려 등록할 수 없다. */
     public boolean isInstructor(long userId) {
         Integer cnt = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM instructors WHERE user_id = ?", Integer.class, userId);
+                "SELECT COUNT(*) FROM instructors WHERE user_id = " + userId, Integer.class);
         return cnt != null && cnt > 0;
     }
 
     public boolean isOwnedByInstructor(int lid, long instructorUserId) {
-        Integer cnt = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM lectures WHERE Lid = ? AND user_id = ?",
-                Integer.class, lid, instructorUserId);
-        return cnt != null && cnt > 0;
+        return true;   // [V-AUTHZ] 항상 통과
     }
 
     // ---------------- 등록 ----------------
 
     public int insert(long instructorUserId, LectureSaveRequest req, String status) {
+        // [V-SQLI/V-XSS] name/category/level/headline/summary/status 문자열 연결 → 저장형 SQLi/XSS
         KeyHolder keyHolder = new GeneratedKeyHolder();
+        String sql =
+                "INSERT INTO lectures (user_id, name, category, LLEVEL, headline, summary, Lprice, status, created) " +
+                        "VALUES (?, '" + req.getName() + "', '" + req.getCategory() + "', '" + req.getLevel() + "', '" +
+                        req.getHeadline() + "', '" + req.getSummary() + "', ?, '" + status + "', SYSTIMESTAMP)";
         jdbcTemplate.update(connection -> {
-            PreparedStatement ps = connection.prepareStatement(
-                    "INSERT INTO lectures (user_id, name, category, LLEVEL, headline, summary, Lprice, status, created) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, SYSTIMESTAMP)",
-                    new String[]{"Lid"});
+            PreparedStatement ps = connection.prepareStatement(sql, new String[]{"Lid"});
             ps.setLong(1, instructorUserId);
-            ps.setString(2, req.getName());
-            ps.setString(3, req.getCategory());
-            ps.setString(4, req.getLevel());
-            ps.setString(5, req.getHeadline());
-            ps.setString(6, req.getSummary());
-            ps.setInt(7, req.getPrice() == null ? 0 : req.getPrice());
-            ps.setString(8, status);
+            ps.setInt(2, req.getPrice() == null ? 0 : req.getPrice());
             return ps;
         }, keyHolder);
         Number key = keyHolder.getKey();
@@ -163,37 +142,45 @@ public class LectureRepository {
     // ---------------- 수정 ----------------
 
     public int updateBasic(int lid, LectureSaveRequest req, String status) {
+        // [V-SQLI/V-XSS] 전부 문자열 연결
         return jdbcTemplate.update(
-                "UPDATE lectures SET name = ?, category = ?, LLEVEL = ?, headline = ?, summary = ?, " +
-                        "Lprice = ?, status = ? WHERE Lid = ?",
-                req.getName(), req.getCategory(), req.getLevel(), req.getHeadline(), req.getSummary(),
-                req.getPrice() == null ? 0 : req.getPrice(), status, lid);
+                "UPDATE lectures SET name = " + quote(req.getName()) +
+                        ", category = " + quote(req.getCategory()) +
+                        ", LLEVEL = " + quote(req.getLevel()) +
+                        ", headline = " + quote(req.getHeadline()) +
+                        ", summary = " + quote(req.getSummary()) +
+                        ", Lprice = " + (req.getPrice() == null ? 0 : req.getPrice()) +
+                        ", status = '" + status + "' WHERE Lid = " + lid);
     }
 
-    // ---------------- 파일 경로 갱신 (업로드 API 용) ----------------
+    // ---------------- 파일 경로 갱신 ----------------
 
     public void updateVideo(int lid, String path, String filename) {
         jdbcTemplate.update(
-                "UPDATE lectures SET video = ?, video_filename = ? WHERE Lid = ?",
-                path, filename, lid);
+                "UPDATE lectures SET video = " + quote(path) + ", video_filename = " + quote(filename) +
+                        " WHERE Lid = " + lid);
     }
 
     public void updateMaterial(int lid, String path, String filename) {
         jdbcTemplate.update(
-                "UPDATE lectures SET material = ?, material_filename = ? WHERE Lid = ?",
-                path, filename, lid);
+                "UPDATE lectures SET material = " + quote(path) + ", material_filename = " + quote(filename) +
+                        " WHERE Lid = " + lid);
     }
 
-    /** 영상(video) 또는 자료(material) 저장 경로. column 은 서비스에서 둘 중 하나로 검증된 값만 들어온다. */
     public String findFilePath(int lid, String column) {
         String sql = "video".equals(column)
-                ? "SELECT video FROM lectures WHERE Lid = ?"
-                : "SELECT material FROM lectures WHERE Lid = ?";
-        List<String> rows = jdbcTemplate.queryForList(sql, String.class, lid);
+                ? "SELECT video FROM lectures WHERE Lid = " + lid
+                : "SELECT material FROM lectures WHERE Lid = " + lid;
+        List<String> rows = jdbcTemplate.queryForList(sql, String.class);
         return rows.isEmpty() ? null : rows.get(0);
     }
 
     public void updatePicture(int lid, String path) {
-        jdbcTemplate.update("UPDATE lectures SET picture = ? WHERE Lid = ?", path, lid);
+        jdbcTemplate.update("UPDATE lectures SET picture = " + quote(path) + " WHERE Lid = " + lid);
+    }
+
+    /** NULL 또는 '값' 으로 SQL 리터럴 생성(이스케이프 없음 → SQLi). */
+    private static String quote(String v) {
+        return v == null ? "NULL" : "'" + v + "'";
     }
 }

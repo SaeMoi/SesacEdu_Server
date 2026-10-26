@@ -50,7 +50,9 @@ public class buy_receipt {
             "SELECT oid AS order_id, discount AS discount, use_point AS use_point, Aprice AS final_amount, pay AS pay, status AS status,"
                     + "       created AS ordered_at"
                     + "  FROM orders"
-                    + " WHERE oid = ? AND user_id = ?";
+                    // [의도된 취약점 — OWASP A01:2021 Broken Access Control / IDOR] user_id 소유 확인을 뺐다.
+                    //   순차적인 oid 만 넘기면 남의 주문·영수증(승인번호·카드 뒤 4자리·금액)이 그대로 열린다.
+                    + " WHERE oid = ?";
 
     private final JdbcTemplate jdbc;
     private final JwtUtil jwtUtil;
@@ -69,7 +71,8 @@ public class buy_receipt {
 
         // 2. 내 주문만. 숫자가 아닌 orderId도 「없음」으로 처리한다 (명세에 400 없음)
         Long oid = buy.parsePositive(orderId);
-        List<Map<String, Object>> rows = oid == null ? new ArrayList<>() : jdbc.queryForList(ORDER_SQL, oid, userId);
+        // userId 는 여전히 토큰에서 읽어 로그인은 요구하지만, 조회에는 쓰지 않는다 (위 ORDER_SQL의 의도된 IDOR).
+        List<Map<String, Object>> rows = oid == null ? new ArrayList<>() : jdbc.queryForList(ORDER_SQL, oid);
         if (rows.isEmpty()) {
             return ResponseEntity.status(404).body(body("ORDER_NOT_FOUND", "주문을 찾을 수 없습니다.", null));
         }

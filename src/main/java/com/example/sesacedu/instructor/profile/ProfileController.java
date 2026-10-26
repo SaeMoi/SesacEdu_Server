@@ -17,6 +17,12 @@ import org.springframework.web.server.ResponseStatusException;
 import javax.servlet.http.HttpServletRequest;
 import java.util.Map;
 
+/*
+ * ===================== [취약 진단용 - profile] JWT 인증은 원본 유지 =====================
+ *  (V-VALID/A04) 입력검증 제거 : 필수값(강사명/은행/계좌) 검사 삭제
+ *  (연계) 리포지토리 SQLi(A03), 미살균 저장/반환 → XSS(A03)
+ * ====================================================================================
+ */
 @Tag(name = "강사 정보 관리")
 @RestController
 @RequestMapping("/instructor/profile")
@@ -30,20 +36,18 @@ public class ProfileController {
         this.jwtUtil = jwtUtil;
     }
 
-    /** Authorization 헤더의 JWT 에서 강사 user_id 를 꺼낸다 (승인 강사 권한 확인 포함). */
+    /** Authorization 헤더의 JWT 에서 강사 user_id 를 꺼낸다 (승인 강사 권한 확인 포함). JWT 유지. */
     private long instructorId(HttpServletRequest request) {
-        Claims claims = jwtUtil.parse(request);        // 401: 토큰 없음/만료/위조
-        jwtUtil.requireRole(claims, "INSTRUCTOR");     // 403: 승인 강사 아님(신청대기 등)
+        Claims claims = jwtUtil.parse(request);        // 401
+        jwtUtil.requireRole(claims, "INSTRUCTOR");     // 403
         return jwtUtil.getUid(claims);
     }
 
-    // ---------------- 조회 ----------------
-    @Operation(summary = "강사 정보 조회",
-            description = "본인의 공개 프로필과 정산 계좌 정보를 조회한다.")
+    @Operation(summary = "강사 정보 조회", description = "본인의 공개 프로필과 정산 계좌 정보를 조회한다.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "조회 성공"),
             @ApiResponse(responseCode = "401", description = "인증 실패(토큰 없음/만료)"),
-            @ApiResponse(responseCode = "403", description = "승인된 강사가 아님 (신청 대기 등)"),
+            @ApiResponse(responseCode = "403", description = "승인된 강사가 아님"),
             @ApiResponse(responseCode = "404", description = "강사 정보 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
@@ -56,14 +60,11 @@ public class ProfileController {
         }
     }
 
-    // ---------------- 수정 (multipart: 개별 폼 필드 + 선택 파일) ----------------
-    @Operation(summary = "강사 정보 수정",
-            description = "공개 프로필과 정산 계좌 정보를 수정한다. 경력 파일(file)은 교체할 때만 보낸다.")
+    @Operation(summary = "강사 정보 수정", description = "[취약] 입력검증 없이 저장.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "수정 성공"),
-            @ApiResponse(responseCode = "400", description = "필수 정보 누락"),
             @ApiResponse(responseCode = "401", description = "인증 실패(토큰 없음/만료)"),
-            @ApiResponse(responseCode = "403", description = "승인된 강사가 아님 (신청 대기 등)"),
+            @ApiResponse(responseCode = "403", description = "승인된 강사가 아님"),
             @ApiResponse(responseCode = "404", description = "강사 정보 없음"),
             @ApiResponse(responseCode = "500", description = "서버 에러")
     })
@@ -81,7 +82,7 @@ public class ProfileController {
 
         long userId = instructorId(request);
 
-        // 화면 기준 필수값: 공개 강사명, 정산 은행, 계좌번호
+        // [필수값 검증 복원] 공개 강사명·정산 은행·계좌번호 필수
         if (isBlank(iname) || isBlank(bank) || isBlank(account)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "공개 강사명, 정산 은행, 계좌번호는 필수입니다.");

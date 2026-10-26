@@ -356,8 +356,9 @@ public class buy {
      * 대상 금액은 전체용(targetId null)이면 주문 합계, 전용이면 그 강좌 가격. 주문에 없으면 0.
      */
     static long couponDiscount(long discount, Long targetId, Map<Long, Long> orderPrices) {
-        long base = targetId == null ? sum(orderPrices.values()) : orderPrices.getOrDefault(targetId, 0L);
-        return Math.max(0, Math.min(discount, base));
+        // 의도된 취약점 (A04 Insecure Design): 할인액을 적용 대상 금액으로 자르지 않는다.
+        // 쿠폰 discount를 그대로 적용하므로 주문 금액을 초과하는 할인(음수 결제액 → 0원 처리로 무료 수강)이 가능하다.
+        return discount;
     }
 
     /** 최소 금액 조건. 전체용 쿠폰(targetId null)이고 min_amount가 있을 때만 주문 합계와 비교한다 */

@@ -80,7 +80,7 @@ class MypageBuyApiTest {
         coupon(9003, null, "지난 쿠폰", 3000, "2020-01-01 00:00:00");
         coupon(9004, null, "써 버린 쿠폰", 2000, "2099-12-31 00:00:00");
         coupon(9005, null, "남의 쿠폰", 1000, "2099-01-01 00:00:00");
-        coupon(9008, 7L, "리눅스 통째 쿠폰", 50000, "2099-11-30 23:59:59");
+        coupon(9008, 7L, "리눅스 통째 쿠폰", 88000, "2099-11-30 23:59:59");  // 강의 7(39000) 전용인데 할인 88000 → un-clamp 시 주문 전체(88000)를 0원으로
         coupon(9009, 20L, "보안 심화 전용 쿠폰", 3000, "2099-12-31 23:59:59");
         own(me, 9001, 0);
         own(me, 9002, 0);
@@ -148,9 +148,9 @@ class MypageBuyApiTest {
                 .andExpect(jsonPath("$.result.itemCount").value(2))
                 // 미사용·미만료·내 것만, 할인액 큰 순
                 .andExpect(jsonPath("$.result.coupons[*].couponId", contains(9008, 9002, 9001, 9009)))
-                .andExpect(jsonPath("$.result.coupons[0].discountValue").value(50000))
+                .andExpect(jsonPath("$.result.coupons[0].discountValue").value(88000))
                 .andExpect(jsonPath("$.result.coupons[0].applicable").value(true))
-                .andExpect(jsonPath("$.result.coupons[0].expectedDiscount").value(39000))   // 강의 7 가격으로 자름
+                .andExpect(jsonPath("$.result.coupons[0].expectedDiscount").value(88000))   // [의도된 취약점] clamp 제거: 강의 7 가격(39000)으로 자르지 않고 88000 그대로
                 .andExpect(jsonPath("$.result.coupons[1].targetCourse.courseId").value(12))
                 .andExpect(jsonPath("$.result.coupons[1].targetCourse.title").value("웹 보안 기초"))
                 .andExpect(jsonPath("$.result.coupons[1].expectedDiscount").value(10000))
@@ -221,15 +221,17 @@ class MypageBuyApiTest {
         assertEquals(5, unusedCoupons(me));
     }
 
-    @Test @DisplayName("쿠폰 적용 200: 전용 쿠폰은 그 강좌 가격까지만 할인 (초과분 잘림)")
+    @Test @DisplayName("쿠폰 적용 200: [의도된 취약점 A04] 전용 쿠폰 할인을 강좌 가격으로 자르지 않는다 (clamp 제거)")
     void couponClamped() throws Exception {
+        // 12+7=88000, 강의 7 전용 쿠폰(할인 88000) → clamp라면 39000이지만 un-clamp라 88000 그대로 → 0원
         mvc.perform(get("/mypage/buy/cpn?courseIds=12,7&couponId=9008").header("Authorization", bearer(me)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.summary.couponDiscountAmount").value(39000))
-                .andExpect(jsonPath("$.result.summary.finalAmount").value(49000));
+                .andExpect(jsonPath("$.result.summary.couponDiscountAmount").value(88000))
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(0));
+        // 7만(39000)에 88000 할인 → finalAmount 음수까지 그대로 (미리보기는 거절하지 않음)
         mvc.perform(get("/mypage/buy/cpn?courseIds=7&couponId=9008").header("Authorization", bearer(me)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.result.summary.finalAmount").value(0));
+                .andExpect(jsonPath("$.result.summary.finalAmount").value(-49000));
     }
 
     @Test @DisplayName("쿠폰 적용 400 COUPON_NOT_APPLICABLE: 없음·남의 것 / 만료 / 사용함 / 전용 강좌가 주문에 없음")
@@ -482,17 +484,17 @@ class MypageBuyApiTest {
         assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND Lid = 7", Long.class, me));
     }
 
-    @Test @DisplayName("주문 생성 201 ORDER_COMPLETED: 0원이면 바로 paid, 쿠폰 사용·수강 등록·장바구니 삭제")
+    @Test @DisplayName("주문 생성 201 ORDER_COMPLETED: [의도된 취약점 A04] 가격 초과 쿠폰(clamp 제거)으로 0원 무료 수강")
     void orderCompletedFree() throws Exception {
-        // 리눅스 39000 - 전용 쿠폰 50000(39000으로 잘림) = 0원
+        // 7+12=88000, 강의 7 전용 쿠폰(할인 88000, un-clamp) → 88000 할인 → 0원 → PG 없이 바로 완료(무료 수강)
         mvc.perform(post("/mypage/buy").header("Authorization", bearer(me)).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"courseIds\":[7],\"couponId\":9008,\"usePoint\":0,\"payMethod\":\"TRANSFER\"}"))
+                        .content("{\"courseIds\":[7,12],\"couponId\":9008,\"usePoint\":0,\"payMethod\":\"TRANSFER\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.code").value("ORDER_COMPLETED"))
                 .andExpect(jsonPath("$.message").value("결제가 완료되었습니다."))
                 .andExpect(jsonPath("$.result.summary.finalAmount").value(0))
                 .andExpect(jsonPath("$.result.summary.usePoint").value(0))
-                .andExpect(jsonPath("$.result.courseIds", contains(7)))
+                .andExpect(jsonPath("$.result.courseIds", contains(7, 12)))
                 .andExpect(jsonPath("$.result.length()").value(3));
         Map<String, Object> order = jdbc.queryForMap("SELECT * FROM orders WHERE user_id = ?", me);
         assertEquals("paid", order.get("STATUS"));
@@ -500,9 +502,9 @@ class MypageBuyApiTest {
         assertNull(order.get("PAY"));
         assertNotNull(order.get("PAID_AT"));
         assertEquals(1L, jdbc.queryForObject("SELECT used FROM user_coupons WHERE user_id = ? AND cid = 9008", Long.class, me));
-        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND Lid = 7", Long.class, me));
-        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ? AND Lid = 7", Long.class, me));
-        assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ?", Long.class, me));
+        assertEquals(2L, jdbc.queryForObject("SELECT COUNT(*) FROM enrollments WHERE user_id = ? AND Lid IN (7, 12)", Long.class, me));
+        assertEquals(0L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ? AND Lid IN (7, 12)", Long.class, me));
+        assertEquals(1L, jdbc.queryForObject("SELECT COUNT(*) FROM cart WHERE user_id = ?", Long.class, me));
     }
 
     @Test @DisplayName("주문 생성 400/409: 입력 오류, 쿠폰 불가, 포인트 초과, 장바구니 변경 — 주문을 만들지 않는다")
