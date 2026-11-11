@@ -28,4 +28,11 @@ public interface FileStorage {
      * @param path store() 가 반환했던 경로
      */
     void delete(String path);
+
+    /**
+     * 저장된 zip 을 같은 폴더의 unpacked/ 아래로 푼다.
+     * 압축을 열지 않고 안에 든 파일 목록을 보여 주려고 올릴 때 미리 풀어 둔다.
+     * @param path store() 가 반환했던 zip 경로
+     */
+    void unpackZip(String path);
 }
