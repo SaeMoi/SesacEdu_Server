@@ -40,12 +40,14 @@ class LocalFileStorageTest {
         LocalFileStorage storage = new LocalFileStorage(base.resolve("storage").toString());
 
         // assignment/1 이 두 단계라 세 번 올라가야 저장소 루트 밖으로 나간다.
-        String saved = storage.store(file("../../../밖.txt", "여기"), "assignment/1");
+        // 내용은 ASCII 로 둔다. hasContent 는 플랫폼 기본 인코딩으로 읽어서, 우리말을 쓰면
+        // UTF-8 로 저장한 바이트를 MS949 로 읽다가 깨진다.
+        String saved = storage.store(file("../../../밖.txt", "escaped"), "assignment/1");
         Path written = base.resolve("storage").resolve(saved).normalize();
 
         assertThat(written.startsWith(base.resolve("storage"))).isFalse();
         assertThat(written).exists();
-        assertThat(written).hasContent("여기");
+        assertThat(written).hasContent("escaped");
     }
 
     /**
@@ -57,11 +59,11 @@ class LocalFileStorageTest {
     void 역슬래시로_적은_상위_폴더_표기도_통한다() {
         LocalFileStorage storage = new LocalFileStorage(base.resolve("storage").toString());
 
-        String saved = storage.store(file("..\\..\\..\\밖2.txt", "역슬래시"), "assignment/1");
+        String saved = storage.store(file("..\\..\\..\\밖2.txt", "backslash"), "assignment/1");
         Path written = base.resolve("storage").resolve(saved).normalize();
 
         assertThat(written.startsWith(base.resolve("storage"))).isFalse();
-        assertThat(written).hasContent("역슬래시");
+        assertThat(written).hasContent("backslash");
     }
 
     /** zip 안에 적힌 경로가 unpacked/ 위를 가리키면 그 자리에 풀린다. */
@@ -71,13 +73,13 @@ class LocalFileStorageTest {
         LocalFileStorage storage = new LocalFileStorage(root.toString());
         String saved = storage.store(file("제출.zip", ""), "assignment/1");
         // unpacked/ 는 assignment/1 아래라 네 번 올라가야 저장소 루트 밖으로 나간다.
-        Files.write(root.resolve(saved), zipWith("../../../../밖.jsp", "풀렸다"));
+        Files.write(root.resolve(saved), zipWith("../../../../밖.jsp", "unzipped"));
 
         storage.unpackZip(saved);
 
         Path escaped = base.resolve("밖.jsp");
         assertThat(escaped).exists();
-        assertThat(escaped).hasContent("풀렸다");
+        assertThat(escaped).hasContent("unzipped");
     }
 
     private MockMultipartFile file(String name, String body) {
