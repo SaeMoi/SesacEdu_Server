@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
  * FileStorage 로컬 구현.
@@ -33,13 +35,16 @@ public class LocalFileStorage implements FileStorage {
     @Override
     public String store(MultipartFile file, String prefix) {
         String original = file.getOriginalFilename();
-        // 폴더 부분은 버리고 파일명만 쓴다 (../ 로 저장 폴더를 벗어나지 않게).
-        String baseName = original == null ? "" : original.replace('\\', '/');
-        baseName = baseName.substring(baseName.lastIndexOf('/') + 1).trim();
-        String safeName = baseName.isEmpty() || baseName.equals("..") ? "file" : baseName;
-        // prefix/UUID_원본파일명 형태의 경로를 만든다.
+        // 업로더가 보낸 폴더 구조를 그대로 살린다. 자료를 폴더째 올렸을 때 받는 쪽에서도
+        // 같은 구조로 보여야 하므로 파일명 앞의 폴더 부분을 버리지 않는다.
+        String sent = original == null ? "" : original.replace('\\', '/').trim();
+        int slash = sent.lastIndexOf('/');
+        String dir = slash < 0 ? "" : sent.substring(0, slash + 1);
+        String baseName = sent.substring(slash + 1);
+        String safeName = baseName.isEmpty() ? "file" : baseName;
+        // prefix/보낸폴더/UUID_원본파일명. UUID 는 같은 이름이 서로 덮어쓰지 않게 파일명에만 붙인다.
         String key = UUID.randomUUID().toString().substring(0, 8);
-        String relative = prefix + "/" + key + "_" + safeName;
+        String relative = prefix + "/" + dir + key + "_" + safeName;
 
         Path target = root.resolve(relative).normalize();
         try (InputStream in = file.getInputStream()) {
@@ -62,6 +67,24 @@ public class LocalFileStorage implements FileStorage {
             Files.deleteIfExists(target);
         } catch (IOException e) {
             throw new UncheckedIOException("파일 삭제 실패: " + path, e);
+        }
+    }
+
+    @Override
+    public void unpackZip(String path) {
+        if (path == null || path.isBlank()) return;
+        Path zip = root.resolve(path);
+        Path into = zip.getParent().resolve("unpacked");
+        try (ZipInputStream zin = new ZipInputStream(Files.newInputStream(zip))) {
+            for (ZipEntry entry = zin.getNextEntry(); entry != null; entry = zin.getNextEntry()) {
+                if (entry.isDirectory()) continue;
+                // 압축 안에 적힌 경로를 그대로 쓴다. 폴더째 압축한 자료의 구조를 유지해야 한다.
+                Path target = into.resolve(entry.getName());
+                Files.createDirectories(target.getParent());
+                Files.copy(zin, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            // 목록 미리보기만 못 하게 된다. 파일 자체는 이미 저장됐으므로 제출을 실패로 만들지 않는다.
         }
     }
 
