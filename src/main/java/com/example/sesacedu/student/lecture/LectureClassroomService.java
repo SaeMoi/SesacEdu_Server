@@ -64,13 +64,18 @@ public class LectureClassroomService {
             throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "FILE_TOO_LARGE", "과제 파일은 10MB까지 올릴 수 있습니다.");
         }
         String original = file.getOriginalFilename() == null ? "" : file.getOriginalFilename();
-        int dot = original.lastIndexOf('.');
-        String ext = dot < 0 ? "" : original.substring(dot + 1).toLowerCase(Locale.ROOT);
-        if (!WORK_EXT.contains(ext)) {
+        // 이름 전체에서 허용 확장자를 찾는다. 파일명에 점이 여러 개 들어간 제출(과제_1.차시.pdf)이
+        // 마지막 점만 보는 검사에서 거부돼 들어온 문의가 있어 찾는 범위를 이름 전체로 넓혔다.
+        String lower = original.toLowerCase(Locale.ROOT);
+        boolean allowed = WORK_EXT.stream().anyMatch(e -> lower.contains("." + e));
+        if (!allowed) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_FILE_TYPE",
                     "과제 파일은 " + String.join(", ", WORK_EXT) + " 형식만 올릴 수 있습니다.");
         }
         String work = fileStorage.store(file, "assignment/" + lid);
+        if (lower.contains(".zip")) {
+            fileStorage.unpackZip(work);      // 과제 화면에서 압축 안 파일 목록을 보여 준다
+        }
         Map<String, String> result = new LinkedHashMap<>();
         result.put("work", work);
         String stored = work.substring(work.lastIndexOf('/') + 1);

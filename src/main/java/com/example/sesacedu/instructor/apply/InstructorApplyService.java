@@ -2,9 +2,11 @@ package com.example.sesacedu.instructor.apply;
 
 import com.example.sesacedu.global.storage.FileStorage;
 import com.example.sesacedu.instructor.apply.dto.ApplyStatusResponse;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * 강사 신청 기능 로직.
@@ -20,6 +22,9 @@ public class InstructorApplyService {
     private static final int AUTH_INSTRUCTOR = 2;        // 강사(승인 완료)
     private static final int AUTH_ADMIN = 3;             // 관리자
     private static final int AUTH_APPLY_PENDING = 4;     // 강사 신청 대기
+
+    /** 경력 파일 크기 한도. 과제 첨부와 같은 값으로 맞췄다. */
+    private static final long CAREER_MAX_BYTES = 10L * 1024 * 1024;
 
     private final InstructorApplyRepository applyRepository;
     private final FileStorage fileStorage;
@@ -62,6 +67,16 @@ public class InstructorApplyService {
         // 이미 신청 대기(4) / 강사(2) / 관리자(3) 면 신청 불가
         if (auth == AUTH_APPLY_PENDING || auth == AUTH_INSTRUCTOR || auth == AUTH_ADMIN) {
             throw new AlreadyAppliedException();
+        }
+
+        // 저장 경로는 보낸 폴더 구조를 살려서 만든다. 그래서 이름에 상위 폴더 표기가 들어오면
+        // 저장 폴더 밖을 가리킬 수 있어 먼저 막는다. 크기 한도는 과제 첨부와 같은 10MB 로 둔다.
+        String careerName = career.getOriginalFilename() == null ? "" : career.getOriginalFilename();
+        if (careerName.contains("../")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "파일 이름에 상위 폴더 표기를 쓸 수 없습니다.");
+        }
+        if (career.getSize() > CAREER_MAX_BYTES) {
+            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE, "경력 파일은 10MB까지 올릴 수 있습니다.");
         }
 
         // 파일 저장 (S3 준비 전엔 임시 구현이 경로만 생성)
